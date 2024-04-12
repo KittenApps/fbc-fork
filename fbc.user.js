@@ -22,10 +22,22 @@
 async function ForBetterClub() {
 	"use strict";
 
-	const FBC_VERSION = "5.8";
-	const settingsVersion = 58;
+	const FBC_VERSION = "5.9";
+	const settingsVersion = 59;
 
 	const fbcChangelog = `${FBC_VERSION}
+- Preliminary R103 compatibility
+- Removed features intentionally broken by BC developers:
+	- custom animation engine and all the features that rely on it
+	- chat links and embeds (though they remain within the IM)
+	- automatic struggling, carpal tunnel wins the day
+	- bluetooth toy sync
+	- prompts before loading 3rd party content - UNRESTRICTED ROOM CUSTOMIZATION IS INHERENTLY UNSAFE, SET IT TO NEVER IN YOUR ONLINE SETTINGS
+	- FPS counter
+	- FPS limits
+	- Friend online/offline notifications
+
+5.8
 - Changed discreet mode to allow friend list and main hall backgrounds
 - Changed /beep to respect BCX beep restrictions
 
@@ -35,9 +47,6 @@ async function ForBetterClub() {
 
 5.6
 - Changed modals to use FUSAM's modal system
-
-5.5
-- Fixed a bug where local settings would get priority over online settings, which could cause issues when using multiple devices
 `;
 
 	const SUPPORTED_GAME_VERSIONS = ["R102"];
@@ -87,10 +96,6 @@ async function ForBetterClub() {
 		BCE_MAX_AROUSAL = 99.6,
 		BCE_MSG = "BCEMsg",
 		BCX_ORIGINAL_MESSAGE = "BCX_ORIGINAL_MESSAGE",
-		BEEP_CLICK_ACTIONS = Object.freeze({
-			/** @type {"FriendList"} */
-			FriendList: "FriendList",
-		}),
 		CLOSINGBRACKETINDICATOR = "\\uf130\\u005d",
 		DARK_INPUT_CLASS = "bce-dark-input",
 		DEFAULT_WARDROBE_SIZE = 24,
@@ -122,11 +127,6 @@ async function ForBetterClub() {
 	/** @type {Map<string, "allowed" | "denied">} */
 	const sessionCustomOrigins = new Map();
 
-	/** @type {FBCToySyncState} */
-	const toySyncState = {
-		deviceSettings: new Map(),
-	};
-
 	const HOOK_PRIORITIES = /** @type {const} */ ({
 		Top: 11,
 		OverrideBehaviour: 10,
@@ -145,54 +145,6 @@ async function ForBetterClub() {
 	let postSettingsHasRun = false;
 
 	const defaultSettings = /** @type {const} */ ({
-		animationEngine: {
-			label: "Animation Engine",
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				if (newValue && Player.ArousalSettings) {
-					// Disable conflicting settings
-					Player.ArousalSettings.AffectExpression = false;
-				}
-			},
-			value: false,
-			category: "activities",
-			description:
-				"Enables the animation engine. This will replace the game's expression and pose system.",
-		},
-		expressions: {
-			label: "Automatic Arousal Expressions (Replaces Vanilla)",
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				if (newValue) {
-					fbcSettings.animationEngine = true;
-					defaultSettings.animationEngine.sideEffects(true);
-				}
-				debug("expressions", newValue);
-			},
-			value: false,
-			category: "activities",
-			description: "Automatically express arousal when performing an activity.",
-		},
-		activityExpressions: {
-			label: "Activity Expressions",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				if (newValue) {
-					fbcSettings.animationEngine = true;
-					defaultSettings.animationEngine.sideEffects(true);
-				}
-				debug("activityExpressions", newValue);
-			},
-			category: "activities",
-			description: "Automatically express reactions to certain activities.",
-		},
 		alternateArousal: {
 			label:
 				"Alternate Arousal (Replaces Vanilla, requires hybrid/locked arousal meter)",
@@ -316,19 +268,6 @@ async function ForBetterClub() {
 			category: "chat",
 			description:
 				"Allows you to send messages to other players without having to open the friends list, with enhancements.",
-		},
-		augmentChat: {
-			label: "Chat Links and Embeds",
-			value: true,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("augmentChat", newValue);
-			},
-			category: "chat",
-			description:
-				"Adds clickable links and image embeds from trusted domains only (e.g. imgur) to chat messages.",
 		},
 		ctrlEnterOoc: {
 			label: "Use Ctrl+Enter to OOC",
@@ -507,19 +446,6 @@ async function ForBetterClub() {
 			description:
 				"Allows you to open menus while bound, even if they're disabled in the settings.",
 		},
-		autoStruggle: {
-			label: "Make automatic progress while struggling",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("autoStruggle", newValue);
-			},
-			category: "cheats",
-			description:
-				"All three forms of struggling will be completed automatically in a realistic amount of time, if the restraint is possible to struggle out of.",
-		},
 		allowIMBypassBCX: {
 			label: "Allow IMs to bypass BCX beep restrictions",
 			value: false,
@@ -532,19 +458,6 @@ async function ForBetterClub() {
 			category: "cheats",
 			description:
 				"This setting is temporary until BCX supports a focus mode rule.",
-		},
-		toySync: {
-			label: "Enable buttplug.io (requires refresh)",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("toySync", newValue);
-			},
-			category: "buttplug",
-			description:
-				"Allows the game to control your real vibrators. For a list of supported vibrators see https://buttplug.io",
 		},
 		antiAntiGarble: {
 			label: "Limited gag anti-cheat: cloth-gag equivalent garbling",
@@ -772,19 +685,6 @@ async function ForBetterClub() {
 			description:
 				"Disables drawing on the screen. This is useful for preventing accidental drawing.",
 		},
-		customContentDomainCheck: {
-			label: "Prompt before loading content from a 3rd party domain",
-			value: true,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("customContentDomainCheck", newValue);
-			},
-			category: "misc",
-			description:
-				"Show a confirmation prompt before allowing content from a 3rd party domain to be loaded.",
-		},
 		shareAddons: {
 			label: "Share Addons",
 			value: true,
@@ -797,110 +697,6 @@ async function ForBetterClub() {
 			category: "misc",
 			description:
 				"Share a list of your installed addons with other FBC users in the room, visible via /versions chat command.",
-		},
-		fpsCounter: {
-			label: "Show FPS counter",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("fpsCounter", newValue);
-			},
-			category: "performance",
-			description:
-				"Shows the current FPS in the top-left corner of the screen.",
-		},
-		limitFPSInBackground: {
-			label: "Limit FPS in background",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("limitFPSInBackground", newValue);
-			},
-			category: "performance",
-			description:
-				"Limits the FPS to 10 in the background. This is useful for saving resources when you are not interacting with the game.",
-		},
-		limitFPSTo15: {
-			label: "Limit FPS to ~15",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("limitFPSTo15", newValue);
-				if (newValue) {
-					fbcSettings.limitFPSTo30 = false;
-					fbcSettings.limitFPSTo60 = false;
-				}
-			},
-			category: "performance",
-			description: "Limits the FPS to 15. This is useful for saving resources.",
-		},
-		limitFPSTo30: {
-			label: "Limit FPS to ~30",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("limitFPSTo30", newValue);
-				if (newValue) {
-					fbcSettings.limitFPSTo15 = false;
-					fbcSettings.limitFPSTo60 = false;
-				}
-			},
-			category: "performance",
-			description: "Limits the FPS to 30. This is useful for saving resources.",
-		},
-		limitFPSTo60: {
-			label: "Limit FPS to ~60",
-			value: false,
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("limitFPSTo60", newValue);
-				if (newValue) {
-					fbcSettings.limitFPSTo30 = false;
-					fbcSettings.limitFPSTo15 = false;
-				}
-			},
-			category: "performance",
-			description: "Limits the FPS to 60. This is useful for saving resources.",
-		},
-		buttplugDevices: {
-			label: "Buttplug Devices",
-			value: "",
-			/**
-			 * @param {unknown} newValue
-			 */
-			sideEffects: (newValue) => {
-				debug("buttplugDevices", newValue);
-				// Don't handle empty string
-				if (newValue === "") {
-					return;
-				}
-				try {
-					if (!isString(newValue)) {
-						throw new Error("expected string for buttplugDevices");
-					}
-					const devices = /** @type {FBCToySetting[]} */ (parseJSON(newValue));
-					if (!Array.isArray(devices)) {
-						throw new Error("expected array for devices");
-					}
-					for (const device of devices) {
-						toySyncState.deviceSettings.set(device.Name, device);
-					}
-				} catch (ex) {
-					logError(ex);
-				}
-			},
-			category: "hidden",
-			description: "",
 		},
 	});
 
@@ -994,10 +790,6 @@ async function ForBetterClub() {
 
 			for (const [setting] of objEntries(defaultSettings)) {
 				if (!(setting in settings)) {
-					if (setting === "activityExpressions" && "expressions" in settings) {
-						settings[setting] = settings.expressions;
-						continue;
-					}
 					settings[setting] = defaultSettings[setting].value;
 				}
 			}
@@ -1016,11 +808,6 @@ async function ForBetterClub() {
 
 	const bceSaveSettings = () => {
 		debug("saving settings");
-		if (toySyncState.deviceSettings.size > 0) {
-			fbcSettings.buttplugDevices = JSON.stringify(
-				Array.from(toySyncState.deviceSettings.values())
-			);
-		}
 		localStorage.setItem(bceSettingKey(), JSON.stringify(fbcSettings));
 		Player.ExtensionSettings.FBC = LZString.compressToBase64(
 			JSON.stringify(fbcSettings)
@@ -1092,184 +879,184 @@ async function ForBetterClub() {
 		const translations = Object.freeze({
 			CN: {
 				"Automatic Arousal Expressions (Replaces Vanilla)":
-					"自动欲望表情 (替换原版)",
-				"Activity Expressions": "活动表示",
+					"è‡ªåŠ¨æ¬²æœ›è¡¨æƒ… (æ›¿æ¢åŽŸç‰ˆ)",
+				"Activity Expressions": "æ´»åŠ¨è¡¨ç¤º",
 				"Alternate Arousal (Replaces Vanilla, requires hybrid/locked arousal meter)":
-					"另一种欲望 (替换原版, 需要混合或锁定欲望条)",
-				"Alternative speech stutter": "另一种言语不清",
-				"Enable layering menus": "开启服装分层选项",
-				"Extended wardrobe slots (96)": "扩展衣柜保存槽 (96个)",
+					"å¦ä¸€ç§æ¬²æœ› (æ›¿æ¢åŽŸç‰ˆ, éœ€è¦æ··åˆæˆ–é”å®šæ¬²æœ›æ¡)",
+				"Alternative speech stutter": "å¦ä¸€ç§è¨€è¯­ä¸æ¸…",
+				"Enable layering menus": "å¼€å¯æœè£…åˆ†å±‚é€‰é¡¹",
+				"Extended wardrobe slots (96)": "æ‰©å±•è¡£æŸœä¿å­˜æ§½ (96ä¸ª)",
 				"Replace wardrobe list with character previews":
-					"使用角色预览替换衣柜保存列表",
-				"Clear Drawing Cache Hourly": "每小时清除绘图缓存",
-				"Instant messenger": "即时通讯",
-				"Chat Links and Embeds": "聊天链接和嵌入",
-				"Use Ctrl+Enter to OOC": "使用Ctrl+Enter进行OOC发言",
-				"Use italics for input when whispering": "悄悄话使用斜体字",
-				"Improve colors for readability": "改善颜色以提高可读性",
-				"Show friend presence notifications": "显示好友在线通知",
+					"ä½¿ç”¨è§’è‰²é¢„è§ˆæ›¿æ¢è¡£æŸœä¿å­˜åˆ—è¡¨",
+				"Clear Drawing Cache Hourly": "æ¯å°æ—¶æ¸…é™¤ç»˜å›¾ç¼“å­˜",
+				"Instant messenger": "å³æ—¶é€šè®¯",
+				"Chat Links and Embeds": "èŠå¤©é“¾æŽ¥å’ŒåµŒå…¥",
+				"Use Ctrl+Enter to OOC": "ä½¿ç”¨Ctrl+Enterè¿›è¡ŒOOCå‘è¨€",
+				"Use italics for input when whispering": "æ‚„æ‚„è¯ä½¿ç”¨æ–œä½“å­—",
+				"Improve colors for readability": "æ”¹å–„é¢œè‰²ä»¥æé«˜å¯è¯»æ€§",
+				"Show friend presence notifications": "æ˜¾ç¤ºå¥½å‹åœ¨çº¿é€šçŸ¥",
 				"Show friends going offline too (requires friend presence)":
-					"显示朋友离线通知 (需要启用好友在线通知)",
+					"æ˜¾ç¤ºæœ‹å‹ç¦»çº¿é€šçŸ¥ (éœ€è¦å¯ç”¨å¥½å‹åœ¨çº¿é€šçŸ¥)",
 				"Understand All Gagged and when Deafened":
-					"在被堵住嘴和被堵住耳朵时可以听懂所有发言",
-				"Reveal Lockpicking Order Based on Skill": "根据技能显示撬锁/开锁顺序",
-				"Allow layering menus while bound": "允许在捆绑时用分层菜单",
+					"åœ¨è¢«å µä½å˜´å’Œè¢«å µä½è€³æœµæ—¶å¯ä»¥å¬æ‡‚æ‰€æœ‰å‘è¨€",
+				"Reveal Lockpicking Order Based on Skill": "æ ¹æ®æŠ€èƒ½æ˜¾ç¤ºæ’¬é”/å¼€é”é¡ºåº",
+				"Allow layering menus while bound": "å…è®¸åœ¨æ†ç»‘æ—¶ç”¨åˆ†å±‚èœå•",
 				"Load BCX by Jomshir98 (requires refresh - no auto-update)":
-					"加载 BCX by Jomshir98 (需要刷新 - 无自动更新)",
+					"åŠ è½½ BCX by Jomshir98 (éœ€è¦åˆ·æ–° - æ— è‡ªåŠ¨æ›´æ–°)",
 				"Load BCX beta (requires refresh - auto-updates, compatibility not guaranteed)":
-					"加载 BCX beta 测试版 (需要刷新 - 自动升级, 不保证兼容性)",
+					"åŠ è½½ BCX beta æµ‹è¯•ç‰ˆ (éœ€è¦åˆ·æ–° - è‡ªåŠ¨å‡çº§, ä¸ä¿è¯å…¼å®¹æ€§)",
 				"Limited gag anti-cheat: cloth-gag equivalent garbling":
-					"有限的堵嘴反作弊: 和布堵嘴相同的乱码",
+					"æœ‰é™çš„å µå˜´åä½œå¼Š: å’Œå¸ƒå µå˜´ç›¸åŒçš„ä¹±ç ",
 				"Full gag anti-cheat: use equipped gags to determine garbling":
-					"完整的堵嘴反作弊: 使用当前装备的堵嘴来确定乱码",
+					"å®Œæ•´çš„å µå˜´åä½œå¼Š: ä½¿ç”¨å½“å‰è£…å¤‡çš„å µå˜´æ¥ç¡®å®šä¹±ç ",
 				"Extra gag anti-cheat: even more garbling for the most extreme gags":
-					"扩展的堵嘴反作弊: 对于使用最极端的堵嘴更加混乱",
-				"Require glasses to see": "需要眼镜才能看清",
-				"Check for updates": "检查更新",
-				"Automatic Relogin on Disconnect": "断线后自动重连",
+					"æ‰©å±•çš„å µå˜´åä½œå¼Š: å¯¹äºŽä½¿ç”¨æœ€æžç«¯çš„å µå˜´æ›´åŠ æ··ä¹±",
+				"Require glasses to see": "éœ€è¦çœ¼é•œæ‰èƒ½çœ‹æ¸…",
+				"Check for updates": "æ£€æŸ¥æ›´æ–°",
+				"Automatic Relogin on Disconnect": "æ–­çº¿åŽè‡ªåŠ¨é‡è¿ž",
 				"Show gag cheat and anti-cheat options in chat":
-					"在聊天室里显示堵嘴作弊和反作弊选项",
+					"åœ¨èŠå¤©å®¤é‡Œæ˜¾ç¤ºå µå˜´ä½œå¼Šå’Œåä½œå¼Šé€‰é¡¹",
 				"Automatically ghost+blocklist unnaturally new users":
-					"自动对不自然的用户无视并添加黑名单",
-				"Confirm leaving the game": "离开游戏前需要确认",
-				"Discreet mode (disable drawing)": "谨慎模式 (禁用绘图)",
+					"è‡ªåŠ¨å¯¹ä¸è‡ªç„¶çš„ç”¨æˆ·æ— è§†å¹¶æ·»åŠ é»‘åå•",
+				"Confirm leaving the game": "ç¦»å¼€æ¸¸æˆå‰éœ€è¦ç¡®è®¤",
+				"Discreet mode (disable drawing)": "è°¨æ…Žæ¨¡å¼ (ç¦ç”¨ç»˜å›¾)",
 				"Keep tab active (requires refresh)":
-					"保持标签页处于活动状态 (需要刷新)",
-				"Show FPS counter": "显示 FPS 计数器",
-				"Limit FPS in background": "在后台时限制FPS",
-				"Limit FPS to ~15": "限制 FPS 最高为 ~15",
-				"Limit FPS to ~30": "限制 FPS 最高为 ~30",
-				"Limit FPS to ~60": "限制 FPS 最高为 ~60",
-				"Make automatic progress while struggling": "在挣扎时自动增加进度",
+					"ä¿æŒæ ‡ç­¾é¡µå¤„äºŽæ´»åŠ¨çŠ¶æ€ (éœ€è¦åˆ·æ–°)",
+				"Show FPS counter": "æ˜¾ç¤º FPS è®¡æ•°å™¨",
+				"Limit FPS in background": "åœ¨åŽå°æ—¶é™åˆ¶FPS",
+				"Limit FPS to ~15": "é™åˆ¶ FPS æœ€é«˜ä¸º ~15",
+				"Limit FPS to ~30": "é™åˆ¶ FPS æœ€é«˜ä¸º ~30",
+				"Limit FPS to ~60": "é™åˆ¶ FPS æœ€é«˜ä¸º ~60",
+				"Make automatic progress while struggling": "åœ¨æŒ£æ‰Žæ—¶è‡ªåŠ¨å¢žåŠ è¿›åº¦",
 				"Allow leashing without wearing a leashable item (requires leasher to have FBC too)":
-					"允许在不佩戴牵引绳的情况下也可以进行牵引（需要牵引者也安装有FBC）",
+					"å…è®¸åœ¨ä¸ä½©æˆ´ç‰µå¼•ç»³çš„æƒ…å†µä¸‹ä¹Ÿå¯ä»¥è¿›è¡Œç‰µå¼•ï¼ˆéœ€è¦ç‰µå¼•è€…ä¹Ÿå®‰è£…æœ‰FBCï¼‰",
 				"Enable buttplug.io (requires refresh)":
-					"启用buttplug.io（需要刷新网页)",
+					"å¯ç”¨buttplug.ioï¼ˆéœ€è¦åˆ·æ–°ç½‘é¡µ)",
 				"This page allows configuration of the synchronization of bluetooth connected toys.":
-					"此页面允许配置将BC震动器状态同步到蓝牙连接的玩具",
+					"æ­¤é¡µé¢å…è®¸é…ç½®å°†BCéœ‡åŠ¨å™¨çŠ¶æ€åŒæ­¥åˆ°è“ç‰™è¿žæŽ¥çš„çŽ©å…·",
 				"Save & browse seen profiles (requires refresh)":
-					"保存并浏览已知的个人资料 (需要刷新)",
-				"Chat & Social": "聊天 & 社交",
-				"Activities & Arousal": "活动 & 欲望",
-				"Appearance & Wardrobe": "外观 & 衣柜",
-				"Immersion & Anti-Cheat": "沉浸体验 & 反作弊",
-				Performance: "表现",
-				Misc: "杂项",
-				Cheats: "作弊",
-				"Other Addons": "其他插件",
-				"Show nicknames": "修改你的昵称",
-				"Change your nickname": "修改你的昵称",
-				ah: "啊",
-				aah: "啊❤",
-				mnm: "唔姆",
-				nn: "嗯啊",
-				mnh: "嗯哈",
-				mngh: "唔啊",
-				haa: "哈啊",
-				nng: "嗯嗯❤",
-				mnng: "唔啊❤",
-				"FBC Developer": "FBC 开发者",
-				Incompatibility: "不兼容",
-				"Show recent FBC changelog": "显示最近的FBC更新日志",
-				"Include binds?": "包括束缚？",
-				"Include locks?": "包括锁？",
-				"Include height, body type, hair, etc?": "包括身高，体型，头发等？",
-				"Copy the looks string below": "复制下面的外观字符串",
-				"Paste your looks here": "在这里粘贴你的外观",
-				"No looks string provided": "没有提供外观字符串",
-				"Applied looks": "应用外观",
-				"Could not parse looks": "无法解析外观",
-				"[membernumber] [message]: beep someone": "[用户编号] [消息]: 发送beep",
-				"For Better Club Settings (FBC)": "For Better Club (FBC)设置",
-				"Join Discord": "加入Discord",
-				License: "授权",
-				Information: "信息",
-				"Still connecting or connection failed...": "正在连接或连接失败...",
-				Scan: "搜索",
-				"Device Name": "设备名称",
-				"Synchronized Slot": "同步栏位",
-				"Click on a setting to see its description": "点击设置以查看其描述",
-				"FBC Settings": "FBC设置",
-				"Saved Logins (FBC)": "已保存的登录 (FBC)",
-				"Save (FBC)": "保存 (FBC)",
-				"Reconnected!": "重新连接！",
-				ERROR: "错误",
-				"Reset all expressions": "重置所有表情",
+					"ä¿å­˜å¹¶æµè§ˆå·²çŸ¥çš„ä¸ªäººèµ„æ–™ (éœ€è¦åˆ·æ–°)",
+				"Chat & Social": "èŠå¤© & ç¤¾äº¤",
+				"Activities & Arousal": "æ´»åŠ¨ & æ¬²æœ›",
+				"Appearance & Wardrobe": "å¤–è§‚ & è¡£æŸœ",
+				"Immersion & Anti-Cheat": "æ²‰æµ¸ä½“éªŒ & åä½œå¼Š",
+				Performance: "è¡¨çŽ°",
+				Misc: "æ‚é¡¹",
+				Cheats: "ä½œå¼Š",
+				"Other Addons": "å…¶ä»–æ’ä»¶",
+				"Show nicknames": "ä¿®æ”¹ä½ çš„æ˜µç§°",
+				"Change your nickname": "ä¿®æ”¹ä½ çš„æ˜µç§°",
+				ah: "å•Š",
+				aah: "å•Šâ¤",
+				mnm: "å””å§†",
+				nn: "å—¯å•Š",
+				mnh: "å—¯å“ˆ",
+				mngh: "å””å•Š",
+				haa: "å“ˆå•Š",
+				nng: "å—¯å—¯â¤",
+				mnng: "å””å•Šâ¤",
+				"FBC Developer": "FBC å¼€å‘è€…",
+				Incompatibility: "ä¸å…¼å®¹",
+				"Show recent FBC changelog": "æ˜¾ç¤ºæœ€è¿‘çš„FBCæ›´æ–°æ—¥å¿—",
+				"Include binds?": "åŒ…æ‹¬æŸç¼šï¼Ÿ",
+				"Include locks?": "åŒ…æ‹¬é”ï¼Ÿ",
+				"Include height, body type, hair, etc?": "åŒ…æ‹¬èº«é«˜ï¼Œä½“åž‹ï¼Œå¤´å‘ç­‰ï¼Ÿ",
+				"Copy the looks string below": "å¤åˆ¶ä¸‹é¢çš„å¤–è§‚å­—ç¬¦ä¸²",
+				"Paste your looks here": "åœ¨è¿™é‡Œç²˜è´´ä½ çš„å¤–è§‚",
+				"No looks string provided": "æ²¡æœ‰æä¾›å¤–è§‚å­—ç¬¦ä¸²",
+				"Applied looks": "åº”ç”¨å¤–è§‚",
+				"Could not parse looks": "æ— æ³•è§£æžå¤–è§‚",
+				"[membernumber] [message]: beep someone": "[ç”¨æˆ·ç¼–å·] [æ¶ˆæ¯]: å‘é€beep",
+				"For Better Club Settings (FBC)": "For Better Club (FBC)è®¾ç½®",
+				"Join Discord": "åŠ å…¥Discord",
+				License: "æŽˆæƒ",
+				Information: "ä¿¡æ¯",
+				"Still connecting or connection failed...": "æ­£åœ¨è¿žæŽ¥æˆ–è¿žæŽ¥å¤±è´¥...",
+				Scan: "æœç´¢",
+				"Device Name": "è®¾å¤‡åç§°",
+				"Synchronized Slot": "åŒæ­¥æ ä½",
+				"Click on a setting to see its description": "ç‚¹å‡»è®¾ç½®ä»¥æŸ¥çœ‹å…¶æè¿°",
+				"FBC Settings": "FBCè®¾ç½®",
+				"Saved Logins (FBC)": "å·²ä¿å­˜çš„ç™»å½• (FBC)",
+				"Save (FBC)": "ä¿å­˜ (FBC)",
+				"Reconnected!": "é‡æ–°è¿žæŽ¥ï¼",
+				ERROR: "é”™è¯¯",
+				"Reset all expressions": "é‡ç½®æ‰€æœ‰è¡¨æƒ…",
 				"['list' or name of emote]: run an animation":
-					"['list' 或 表情名称]: 运行一个动画",
+					"['list' æˆ– è¡¨æƒ…åç§°]: è¿è¡Œä¸€ä¸ªåŠ¨ç”»",
 				"['list' or list of poses]: set your pose":
-					"['list' 或 姿势列表]: 设置你的姿势",
-				"Modify layering priority": "修改分层优先级",
-				"Adjust individual layers": "调整单个层",
-				"Load without body parts": "加载时不包括身体部位",
-				"Exclude body parts": "排除身体部位",
-				Gagging: "堵嘴",
-				"Antigarble anti-cheat strength": "反堵嘴反作弊强度",
-				"Understand: Yes": "理解: 是",
-				"Understand gagspeak: No": "理解堵嘴说话: 否",
-				"Understand gagspeak: Yes": "理解堵嘴说话: 是",
+					"['list' æˆ– å§¿åŠ¿åˆ—è¡¨]: è®¾ç½®ä½ çš„å§¿åŠ¿",
+				"Modify layering priority": "ä¿®æ”¹åˆ†å±‚ä¼˜å…ˆçº§",
+				"Adjust individual layers": "è°ƒæ•´å•ä¸ªå±‚",
+				"Load without body parts": "åŠ è½½æ—¶ä¸åŒ…æ‹¬èº«ä½“éƒ¨ä½",
+				"Exclude body parts": "æŽ’é™¤èº«ä½“éƒ¨ä½",
+				Gagging: "å µå˜´",
+				"Antigarble anti-cheat strength": "åå µå˜´åä½œå¼Šå¼ºåº¦",
+				"Understand: Yes": "ç†è§£: æ˜¯",
+				"Understand gagspeak: No": "ç†è§£å µå˜´è¯´è¯: å¦",
+				"Understand gagspeak: Yes": "ç†è§£å µå˜´è¯´è¯: æ˜¯",
 				"Having recovered your glasses you can see again!":
-					"找回了你的眼镜，你可以看见了！",
+					"æ‰¾å›žäº†ä½ çš„çœ¼é•œï¼Œä½ å¯ä»¥çœ‹è§äº†ï¼",
 				"Having lost your glasses your eyesight is impaired!":
-					"失去了你的眼镜，你的视力受损了！",
+					"å¤±åŽ»äº†ä½ çš„çœ¼é•œï¼Œä½ çš„è§†åŠ›å—æŸäº†ï¼",
 				"([FBC] Force them to become a Club Slave.)":
-					"([FBC] 强制他们成为俱乐部奴隶。)",
+					"([FBC] å¼ºåˆ¶ä»–ä»¬æˆä¸ºä¿±ä¹éƒ¨å¥´éš¶ã€‚)",
 				"(She will become a Club Slave for the next hour.)":
-					"(她将成为俱乐部奴隶，持续一个小时。)",
-				"Search for a friend": "搜索好友",
+					"(å¥¹å°†æˆä¸ºä¿±ä¹éƒ¨å¥´éš¶ï¼ŒæŒç»­ä¸€ä¸ªå°æ—¶ã€‚)",
+				"Search for a friend": "æœç´¢å¥½å‹",
 				"Sending beeps is currently restricted by BCX rules":
-					"发送beep目前受到BCX规则的限制",
-				Online: "在线",
-				Offline: "离线",
-				"Instant Messenger (Disabled by BCX)": "即时通讯器 (被BCX禁用)",
-				"Instant Messenger": "即时通讯器",
-				"FBC Changelog": "FBC更新日志",
-				"Trust this session": "信任此会话",
-				"(embed)": "(嵌入)",
-				"(This origin is trusted by authors of FBC)": "(此来源已被FBC作者信任)",
-				"Deny for session": "拒绝此会话",
-				"Allow for session": "允许此会话",
-				OnlineChat: "在线聊天",
-				"Scans for connected buttplug.io toys": "扫描已连接的buttplug.io玩具",
-				"buttplug.io is not connected": "buttplug.io未连接",
-				"Scanning stopped": "扫描停止",
-				"Scanning for toys": "扫描玩具",
-				"Last seen: ": "最后在线: ",
-				"No profile found": "未找到个人资料",
-				Open: "打开",
-				"Saved Profiles": "已保存的个人资料",
+					"å‘é€beepç›®å‰å—åˆ°BCXè§„åˆ™çš„é™åˆ¶",
+				Online: "åœ¨çº¿",
+				Offline: "ç¦»çº¿",
+				"Instant Messenger (Disabled by BCX)": "å³æ—¶é€šè®¯å™¨ (è¢«BCXç¦ç”¨)",
+				"Instant Messenger": "å³æ—¶é€šè®¯å™¨",
+				"FBC Changelog": "FBCæ›´æ–°æ—¥å¿—",
+				"Trust this session": "ä¿¡ä»»æ­¤ä¼šè¯",
+				"(embed)": "(åµŒå…¥)",
+				"(This origin is trusted by authors of FBC)": "(æ­¤æ¥æºå·²è¢«FBCä½œè€…ä¿¡ä»»)",
+				"Deny for session": "æ‹’ç»æ­¤ä¼šè¯",
+				"Allow for session": "å…è®¸æ­¤ä¼šè¯",
+				OnlineChat: "åœ¨çº¿èŠå¤©",
+				"Scans for connected buttplug.io toys": "æ‰«æå·²è¿žæŽ¥çš„buttplug.ioçŽ©å…·",
+				"buttplug.io is not connected": "buttplug.ioæœªè¿žæŽ¥",
+				"Scanning stopped": "æ‰«æåœæ­¢",
+				"Scanning for toys": "æ‰«æçŽ©å…·",
+				"Last seen: ": "æœ€åŽåœ¨çº¿: ",
+				"No profile found": "æœªæ‰¾åˆ°ä¸ªäººèµ„æ–™",
+				Open: "æ‰“å¼€",
+				"Saved Profiles": "å·²ä¿å­˜çš„ä¸ªäººèµ„æ–™",
 				"Personal notes (only you can read these):":
-					"个人笔记 (只有你可以读到):",
-				"[FBC] Notes": "[FBC] 笔记",
-				"Toggle Editing Mode": "切换编辑模式",
-				"Paste the craft here": "在这里粘贴制作物品",
-				"Copy the craft here": "在这里复制制作物品",
-				Import: "导入",
-				Export: "导出",
-				"Description:": "描述:",
-				Submit: "提交",
-				Cancel: "取消",
-				"Click to close the modal": "点击关闭情态",
-				"Animation Engine": "动画引擎",
-				"Show numeric arousal meter": "显示欲望条数值",
-				"Show friends going offline too": "显示朋友离线通知",
+					"ä¸ªäººç¬”è®° (åªæœ‰ä½ å¯ä»¥è¯»åˆ°):",
+				"[FBC] Notes": "[FBC] ç¬”è®°",
+				"Toggle Editing Mode": "åˆ‡æ¢ç¼–è¾‘æ¨¡å¼",
+				"Paste the craft here": "åœ¨è¿™é‡Œç²˜è´´åˆ¶ä½œç‰©å“",
+				"Copy the craft here": "åœ¨è¿™é‡Œå¤åˆ¶åˆ¶ä½œç‰©å“",
+				Import: "å¯¼å…¥",
+				Export: "å¯¼å‡º",
+				"Description:": "æè¿°:",
+				Submit: "æäº¤",
+				Cancel: "å–æ¶ˆ",
+				"Click to close the modal": "ç‚¹å‡»å…³é—­æƒ…æ€",
+				"Animation Engine": "åŠ¨ç”»å¼•æ“Ž",
+				"Show numeric arousal meter": "æ˜¾ç¤ºæ¬²æœ›æ¡æ•°å€¼",
+				"Show friends going offline too": "æ˜¾ç¤ºæœ‹å‹ç¦»çº¿é€šçŸ¥",
 				"Show friend presence notifications in chat, when possible":
-					"在聊天室里显示好友在线通知",
+					"åœ¨èŠå¤©å®¤é‡Œæ˜¾ç¤ºå¥½å‹åœ¨çº¿é€šçŸ¥",
 				"Show sent messages while waiting for server":
-					"在等待服务器时显示已发送的消息",
-				"Show whisper button on chat messages": "在聊天消息上显示悄悄话按钮",
-				"Rich online profile": "丰富的在线个人资料",
+					"åœ¨ç­‰å¾…æœåŠ¡å™¨æ—¶æ˜¾ç¤ºå·²å‘é€çš„æ¶ˆæ¯",
+				"Show whisper button on chat messages": "åœ¨èŠå¤©æ¶ˆæ¯ä¸Šæ˜¾ç¤ºæ‚„æ‚„è¯æŒ‰é’®",
+				"Rich online profile": "ä¸°å¯Œçš„åœ¨çº¿ä¸ªäººèµ„æ–™",
 				"Allow IMs to bypass BCX beep restrictions":
-					"允许即时通讯绕过BCX beep限制",
-				"Hide the hidden items icon": "不显示隐藏的物品图标",
-				"Enable anti-cheat": "启用反作弊",
+					"å…è®¸å³æ—¶é€šè®¯ç»•è¿‡BCX beepé™åˆ¶",
+				"Hide the hidden items icon": "ä¸æ˜¾ç¤ºéšè—çš„ç‰©å“å›¾æ ‡",
+				"Enable anti-cheat": "å¯ç”¨åä½œå¼Š",
 				"Blacklist detected cheaters automatically":
-					"自动将检测到的作弊者加入黑名单",
-				"Enable uwall anti-cheat": "启用uwall反作弊",
+					"è‡ªåŠ¨å°†æ£€æµ‹åˆ°çš„ä½œå¼Šè€…åŠ å…¥é»‘åå•",
+				"Enable uwall anti-cheat": "å¯ç”¨uwallåä½œå¼Š",
 				"Prompt before loading content from a 3rd party domain":
-					"在加载第三方域名的内容前提示",
-				"Share Addons": "分享插件设置",
-				"Buttplug Devices": "Buttplug设备",
+					"åœ¨åŠ è½½ç¬¬ä¸‰æ–¹åŸŸåçš„å†…å®¹å‰æç¤º",
+				"Share Addons": "åˆ†äº«æ’ä»¶è®¾ç½®",
+				"Buttplug Devices": "Buttplugè®¾å¤‡",
 			},
 		});
 
@@ -1316,10 +1103,6 @@ async function ForBetterClub() {
 					CharacterRefresh: "3A32BC2A",
 					CharacterReleaseTotal: "BB9C6989",
 					CharacterSetCurrent: "F46573D8",
-					CharacterSetFacialExpression: "F83CE881",
-					CharacterSetActivePose: "566A14D7",
-					ChatAdminRoomCustomizationClick: "E194A605",
-					ChatAdminRoomCustomizationProcess: "B33D6388",
 					ChatRoomAppendChat: "998F2F98",
 					ChatRoomCharacterItemUpdate: "263DB2F0",
 					ChatRoomCharacterUpdate: "DE2DC592",
@@ -1375,14 +1158,11 @@ async function ForBetterClub() {
 					ElementScrollToEnd: "1AC45575",
 					ElementValue: "4F26C62F",
 					FriendListShowBeep: "6C0449BB",
-					GameRun: "4FDC9390",
-					GLDrawResetCanvas: "81214642",
 					InformationSheetRun: "91B4FF1F",
 					InventoryGet: "E666F671",
 					LoginClick: "EE94BEC7",
 					LoginRun: "C3926C4F",
 					LoginSetSubmitted: "C88F4A8E",
-					LoginStatusReset: "18619F02",
 					MouseIn: "CA8B839E",
 					NotificationDrawFavicon: "AB88656B",
 					NotificationRaise: "E8F29646",
@@ -1392,7 +1172,6 @@ async function ForBetterClub() {
 					OnlineProfileExit: "1C673DC8",
 					OnlineProfileLoad: "BE8B009B",
 					OnlineProfileRun: "7F57EF9A",
-					PoseSetActive: "22C02050",
 					RelogRun: "10AF5A60",
 					RelogExit: "2DFB2DAD",
 					ServerAccountBeep: "F16771D4",
@@ -1410,19 +1189,11 @@ async function ForBetterClub() {
 					SpeechGarble: "9D669F73",
 					SpeechGarbleByGagLevel: "3D604B82",
 					SpeechGetTotalGagLevel: "5F4F6D45",
-					StruggleDexterityProcess: "7E19ADA9",
-					StruggleFlexibilityCheck: "727CE05B",
-					StruggleFlexibilityProcess: "278D7285",
 					StruggleLockPickDraw: "2F1F603B",
-					StruggleMinigameHandleExpression: "1B3ABF55",
-					StruggleMinigameStop: "FB05E8A9",
-					StruggleStrengthProcess: "D20CF698",
 					TextGet: "4DDE5794",
 					TextLoad: "0D535190",
-					TimerInventoryRemove: "1FA771FB",
 					TimerProcess: "52458C63",
 					TitleExit: "F13F533C",
-					ValidationSanitizeProperties: "659F5965",
 					WardrobeClick: "33405B1D",
 					WardrobeExit: "12D14AE4",
 					WardrobeFastLoad: "AAB9F25B",
@@ -1566,7 +1337,7 @@ async function ForBetterClub() {
 				// EN
 				{ Tag: "Beep", Text: "msg" },
 				// CN
-				{ Tag: "发送私聊", Text: "msg" },
+				{ Tag: "å‘é€ç§èŠ", Text: "msg" },
 				// DE
 				{ Tag: "Biep", Text: "msg" },
 				// FR
@@ -1583,8 +1354,6 @@ async function ForBetterClub() {
 		}
 		return false;
 	};
-
-	w.bceAnimationEngineEnabled = () => !!fbcSettings.animationEngine;
 
 	// Expressions init method for custom expressions
 	// eslint-disable-next-line camelcase
@@ -1620,14 +1389,6 @@ async function ForBetterClub() {
 				.map(([k, v]) => `${k}: ${v.toString()}`)
 				.join("\n- ")}`
 		);
-		if (toySyncState.client?.Connected) {
-			info.set(
-				"Buttplug.io Devices",
-				toySyncState.client.Devices.map(
-					(d) => `${d.Name} (${d.AllowedMessages.join(",")})`
-				).join(", ")
-			);
-		}
 		info.set(
 			"SDK Mods",
 			`\n- ${bcModSdk
@@ -1687,47 +1448,6 @@ async function ForBetterClub() {
 		}
 	};
 
-	// Delay game processes until registration is complete
-	/** @type {"init" | "enable" | "disable"} */
-	let funcsRegistered = "init";
-	SDK.hookFunction(
-		"LoginResponse",
-		HOOK_PRIORITIES.Top,
-		/**
-		 * @param {Parameters<typeof LoginResponse>} args
-		 */ (args, next) => {
-			if (funcsRegistered === "init") {
-				funcsRegistered = "disable";
-			}
-			return next(args);
-		}
-	);
-	SDK.hookFunction(
-		"LoginStatusReset",
-		HOOK_PRIORITIES.Top,
-		/**
-		 * @param {Parameters<typeof LoginStatusReset>} args
-		 */ (args, next) => {
-			if (funcsRegistered === "disable") {
-				funcsRegistered = "init";
-			}
-			return next(args);
-		}
-	);
-	SDK.hookFunction(
-		"GameRun",
-		HOOK_PRIORITIES.Top,
-		/**
-		 * @param {Parameters<typeof GameRun>} args
-		 */ (args, next) => {
-			if (funcsRegistered === "disable") {
-				requestAnimationFrame(GameRun);
-				return null;
-			}
-			return next(args);
-		}
-	);
-
 	await registerFunction(functionIntegrityCheck, "functionIntegrityCheck");
 	registerFunction(bceStyles, "bceStyles");
 	registerFunction(commonPatches, "commonPatches");
@@ -1743,24 +1463,17 @@ async function ForBetterClub() {
 	registerFunction(settingsPage, "settingsPage");
 	registerFunction(alternateArousal, "alternateArousal");
 	registerFunction(chatAugments, "chatAugments");
-	registerFunction(automaticExpressions, "automaticExpressions");
 	registerFunction(layeringMenu, "layeringMenu");
-	registerFunction(cacheClearer, "cacheClearer");
 	registerFunction(lockpickHelp, "lockpickHelp");
 	registerFunction(commands, "commands");
 	registerFunction(chatRoomOverlay, "chatRoomOverlay");
 	registerFunction(privateWardrobe, "privateWardrobe");
 	registerFunction(antiGarbling, "antiGarbling");
 	registerFunction(autoGhostBroadcast, "autoGhostBroadcast");
-	registerFunction(blindWithoutGlasses, "blindWithoutGlasses");
-	registerFunction(friendPresenceNotifications, "friendPresenceNotifications");
 	registerFunction(forcedClubSlave, "forcedClubSlave");
-	registerFunction(fpsCounter, "fpsCounter");
 	registerFunction(instantMessenger, "instantMessenger");
-	registerFunction(autoStruggle, "autoStruggle");
 	registerFunction(nicknames, "nicknames");
 	registerFunction(leashAlways, "leashAlways");
-	registerFunction(toySync, "toySync");
 	registerFunction(pastProfiles, "pastProfiles");
 	registerFunction(pendingMessages, "pendingMessages");
 	registerFunction(hideHiddenItemsIcon, "hideHiddenItemsIcon");
@@ -1768,10 +1481,8 @@ async function ForBetterClub() {
 	registerFunction(itemAntiCheat, "itemAntiCheat");
 	registerFunction(leashFix, "leashFix");
 	registerFunction(hookBCXAPI, "hookBCXAPI");
-	registerFunction(customContentDomainCheck, "customContentDomainCheck");
 	registerFunction(numericArousalMeters, "numericArousalMeters");
 	registerFunction(richOnlineProfile, "richOnlineProfile");
-	funcsRegistered = "enable";
 
 	// Post ready when in a chat room
 	await fbcNotify(`For Better Club v${w.FBC_VERSION} Loaded`);
@@ -1966,56 +1677,6 @@ async function ForBetterClub() {
 					return null;
 				}
 				return next(args);
-			}
-		);
-	}
-
-	function fpsCounter() {
-		let lastFrame = -1;
-
-		/** @type {(ms: number) => number} */
-		const expectedFrameTime = (ms) => (1000 / ms) | 0;
-
-		SDK.hookFunction(
-			"GameRun",
-			HOOK_PRIORITIES.Observe,
-			/**
-			 * @param {Parameters<typeof GameRun>} args
-			 */
-			(args, next) => {
-				const [time] = args;
-				if (lastFrame >= 0 && time > 0) {
-					let ftl = 0;
-					if (fbcSettings.limitFPSInBackground && !document.hasFocus()) {
-						ftl = 10;
-					} else if (fbcSettings.limitFPSTo15) {
-						ftl = 15;
-					} else if (fbcSettings.limitFPSTo30) {
-						ftl = 30;
-					} else if (fbcSettings.limitFPSTo60) {
-						ftl = 60;
-					}
-					if (lastFrame + expectedFrameTime(ftl) > time) {
-						requestAnimationFrame(GameRun);
-						return;
-					}
-				}
-				let frameTime = 10000;
-				if (time > 0) {
-					frameTime = time - lastFrame;
-					lastFrame = time;
-				}
-				next(args);
-				if (time > 0 && fbcSettings.fpsCounter) {
-					DrawTextFit(
-						(Math.round(10000 / frameTime) / 10).toString(),
-						15,
-						12,
-						30,
-						"white",
-						"black"
-					);
-				}
 			}
 		);
 	}
@@ -2543,9 +2204,8 @@ async function ForBetterClub() {
 		let currentSetting = "";
 		/**
 		 * Excludes hidden
-		 * @type {SettingsCategory[]}
 		 */
-		const settingsCategories = [
+		const settingsCategories = /** @type {const} */ ([
 			"chat",
 			"activities",
 			"appearance",
@@ -2553,8 +2213,7 @@ async function ForBetterClub() {
 			"performance",
 			"misc",
 			"cheats",
-			"buttplug",
-		];
+		]);
 		const settingCategoryLabels = /** @type {const} */ ({
 			chat: "Chat & Social",
 			activities: "Activities & Arousal",
@@ -2564,22 +2223,8 @@ async function ForBetterClub() {
 			misc: "Misc",
 			cheats: "Cheats",
 			addons: "Other Addons",
-			buttplug: "Buttplug.io Toys",
 			hidden: "",
 		});
-
-		const vibratingSlots = [
-			"None",
-			...new Set(
-				Asset.filter(
-					(a) =>
-						a.AllowEffect?.includes("Vibrating") ||
-						a.AllowEffect?.includes("Egged")
-				).map((a) => a.Group.Name)
-			),
-		];
-
-		const scanButtonPosition = /** @type {const} */ ([1650, 225, 150, 50]);
 
 		/**
 		 * @param {SettingsCategory} category
@@ -2657,123 +2302,32 @@ async function ForBetterClub() {
 					);
 					y += settingsYIncrement;
 				}
-				if (currentCategory === "buttplug") {
-					DrawText(
-						displayText(
-							"This page allows configuration of the synchronization of bluetooth connected toys."
-						),
+				DrawText(
+					displayText("Click on a setting to see its description"),
+					300,
+					160,
+					"Gray",
+					"Silver"
+				);
+
+				if (isDefaultSettingKey(currentSetting)) {
+					drawTooltip(
 						300,
-						350,
-						"Black",
-						"Gray"
+						830,
+						1400,
+						displayText(defaultSettings[currentSetting].description),
+						"left"
 					);
-					if (fbcSettings.toySync) {
-						if (!toySyncState.client?.Connected) {
-							DrawText(
-								displayText("Still connecting or connection failed..."),
-								300,
-								450,
-								"Black",
-								"Gray"
-							);
-						} else {
-							ctx.textAlign = "center";
-							DrawButton(
-								...scanButtonPosition,
-								displayText("Scan"),
-								toySyncState.client.isScanning ? "Grey" : "White",
-								"",
-								// Bc types do not accept null
-								// eslint-disable-next-line no-undefined
-								toySyncState.client.isScanning ? "Already scanning" : undefined,
-								toySyncState.client.isScanning
-							);
-							ctx.textAlign = "left";
-							DrawText(displayText("Device Name"), 300, 420, "Black", "Gray");
-							DrawText(
-								displayText("Synchronized Slot"),
-								800,
-								420,
-								"Black",
-								"Gray"
-							);
-							y = 500;
-							for (const d of toySyncState.client.Devices.filter((dev) =>
-								dev.AllowedMessages.includes(0)
-							)) {
-								let deviceSettings = toySyncState.deviceSettings.get(d.Name);
-								if (!deviceSettings) {
-									deviceSettings = {
-										Name: d.Name,
-										SlotName: "None",
-									};
-									toySyncState.deviceSettings.set(d.Name, deviceSettings);
-								}
-								const currentIdx = vibratingSlots.indexOf(
-									deviceSettings.SlotName
-								);
-								let nextIdx = 0,
-									previousIdx = 0;
-								if (currentIdx <= 0) {
-									previousIdx = vibratingSlots.length - 1;
-								} else {
-									previousIdx = currentIdx - 1;
-								}
-								if (currentIdx === vibratingSlots.length - 1) {
-									nextIdx = 0;
-								} else {
-									nextIdx = currentIdx + 1;
-								}
-								DrawText(d.Name, 300, y, "Black", "Gray");
-
-								ctx.textAlign = "center";
-								DrawBackNextButton(
-									800,
-									y - 32,
-									450,
-									64,
-									displayText(deviceSettings.SlotName),
-									"white",
-									"",
-									() => displayText(vibratingSlots[previousIdx]),
-									() => displayText(vibratingSlots[nextIdx])
-								);
-								ctx.textAlign = "left";
-								y += settingsYIncrement;
-								if (y > 950) {
-									break;
-								}
-							}
-						}
-					}
-				} else {
-					DrawText(
-						displayText("Click on a setting to see its description"),
-						300,
-						160,
-						"Gray",
-						"Silver"
-					);
-
-					if (isDefaultSettingKey(currentSetting)) {
-						drawTooltip(
-							300,
-							830,
-							1400,
-							displayText(defaultSettings[currentSetting].description),
-							"left"
-						);
-					}
-
-					DrawText(
-						`${currentPageNumber + 1} / ${settingsPageCount(currentCategory)}`,
-						1700,
-						230,
-						"Black",
-						"Gray"
-					);
-					DrawButton(1815, 180, 90, 90, "", "White", "Icons/Next.png");
 				}
+
+				DrawText(
+					`${currentPageNumber + 1} / ${settingsPageCount(currentCategory)}`,
+					1700,
+					230,
+					"Black",
+					"Gray"
+				);
+				DrawButton(1815, 180, 90, 90, "", "White", "Icons/Next.png");
 			} else {
 				let y = settingsYStart;
 				for (const category of settingsCategories) {
@@ -2806,7 +2360,7 @@ async function ForBetterClub() {
 			} else if (MouseIn(...websitePosition)) {
 				open(WEBSITE_URL, "_blank");
 			} else if (currentCategory !== null) {
-				if (MouseIn(1815, 180, 90, 90) && currentCategory !== "buttplug") {
+				if (MouseIn(1815, 180, 90, 90)) {
 					currentPageNumber += 1;
 					currentPageNumber %= settingsPageCount(currentCategory);
 				} else {
@@ -2824,57 +2378,6 @@ async function ForBetterClub() {
 							debug("currentSetting", currentSetting);
 						}
 						y += settingsYIncrement;
-					}
-				}
-				if (currentCategory === "buttplug" && toySyncState.client?.Connected) {
-					if (MouseIn(...scanButtonPosition)) {
-						if (!toySyncState.client.isScanning) {
-							toySyncState.client.startScanning();
-						}
-						return;
-					}
-					y = 500;
-					for (const d of toySyncState.client.Devices.filter((dev) =>
-						dev.AllowedMessages.includes(0)
-					)) {
-						if (!MouseIn(800, y - 32, 450, 64)) {
-							y += settingsYIncrement;
-							continue;
-						}
-						const deviceSettings = toySyncState.deviceSettings.get(d.Name);
-						if (!deviceSettings) {
-							logWarn(
-								"Could not find device settings for",
-								d.Name,
-								toySyncState.deviceSettings
-							);
-							y += settingsYIncrement;
-							continue;
-						}
-						const currentIdx = vibratingSlots.indexOf(deviceSettings.SlotName);
-						let nextIdx = 0,
-							previousIdx = 0;
-						if (currentIdx <= 0) {
-							previousIdx = vibratingSlots.length - 1;
-						} else {
-							previousIdx = currentIdx - 1;
-						}
-						if (currentIdx === vibratingSlots.length - 1) {
-							nextIdx = 0;
-						} else {
-							nextIdx = currentIdx + 1;
-						}
-
-						if (MouseX < 800 + 450 / 2) {
-							deviceSettings.SlotName = vibratingSlots[previousIdx];
-						} else {
-							deviceSettings.SlotName = vibratingSlots[nextIdx];
-						}
-
-						y += settingsYIncrement;
-						if (y > 950) {
-							break;
-						}
 					}
 				}
 			} else {
@@ -3718,2238 +3221,6 @@ async function ForBetterClub() {
 			}
 			return newWords.join("");
 		};
-
-		function bceChatAugments() {
-			if (CurrentScreen !== "ChatRoom" || !fbcSettings.augmentChat) {
-				return;
-			}
-			const chatLogContainerId = "TextAreaChatLog",
-				// Handle chat events
-				handledAttributeName = "data-bce-handled",
-				unhandledChat = document.querySelectorAll(
-					`.ChatMessage:not([${handledAttributeName}=true])`
-				);
-			for (const chatMessageElement of unhandledChat) {
-				chatMessageElement.setAttribute(handledAttributeName, "true");
-				if (
-					(chatMessageElement.classList.contains("ChatMessageChat") ||
-						chatMessageElement.classList.contains("ChatMessageWhisper")) &&
-					!chatMessageElement.classList.contains("bce-pending")
-				) {
-					const scrolledToEnd = ElementIsScrolledToEnd(chatLogContainerId);
-					// eslint-disable-next-line no-loop-func
-					const scrollToEnd = () => {
-						if (scrolledToEnd) {
-							ElementScrollToEnd(chatLogContainerId);
-						}
-					};
-					processChatAugmentsForLine(chatMessageElement, scrollToEnd);
-					if (scrolledToEnd) {
-						ElementScrollToEnd(chatLogContainerId);
-					}
-				}
-			}
-		}
-
-		createTimer(bceChatAugments, 500);
-	}
-
-	async function automaticExpressions() {
-		await waitFor(
-			() => CurrentScreen === "ChatRoom" && !!Player.ArousalSettings
-		);
-		if (!Player.ArousalSettings) {
-			throw new Error("Player.ArousalSettings is not defined");
-		}
-
-		patchFunction(
-			"StruggleMinigameHandleExpression",
-			{
-				'");': '", 3);',
-			},
-			"Resetting blush, eyes, and eyebrows after struggling"
-		);
-
-		SDK.hookFunction(
-			"StruggleMinigameStop",
-			HOOK_PRIORITIES.ModifyBehaviourMedium,
-			/**
-			 * @param {Parameters<typeof StruggleMinigameStop>} args
-			 */
-			(args, next) => {
-				if (bceAnimationEngineEnabled()) {
-					// eslint-disable-next-line no-undefined
-					StruggleExpressionStore = undefined;
-					resetExpressionQueue(
-						[GAME_TIMED_EVENT_TYPE],
-						[MANUAL_OVERRIDE_EVENT_TYPE]
-					);
-				}
-				return next(args);
-			}
-		);
-
-		if (!w.bce_ArousalExpressionStages) {
-			// eslint-disable-next-line camelcase
-			w.bce_ArousalExpressionStages = {
-				Blush: [
-					{ Expression: "High", Limit: 100 },
-					{ Expression: "Medium", Limit: 60 },
-					{ Expression: "Low", Limit: 10 },
-					{ Expression: null, Limit: 0 },
-				],
-				Eyebrows: [
-					{ Expression: "Soft", Limit: 80 },
-					{ Expression: "Lowered", Limit: 50 },
-					{ Expression: "Raised", Limit: 20 },
-					{ Expression: null, Limit: 0 },
-				],
-				Fluids: [
-					{ Expression: "DroolMedium", Limit: 100 },
-					{ Expression: "DroolLow", Limit: 40 },
-					{ Expression: null, Limit: 0 },
-				],
-				Eyes: [
-					{ Expression: "Closed", Limit: 100 },
-					{ Expression: "Surprised", Limit: 90 },
-					{ Expression: "Horny", Limit: 70 },
-					{ Expression: "Dazed", Limit: 20 },
-					{ Expression: null, Limit: 0 },
-				],
-				Eyes2: [
-					{ Expression: "Closed", Limit: 100 },
-					{ Expression: "Surprised", Limit: 90 },
-					{ Expression: "Horny", Limit: 70 },
-					{ Expression: "Dazed", Limit: 20 },
-					{ Expression: null, Limit: 0 },
-				],
-				// Pussy group includes Penis, which is the only type of "pussy" with expressions and controls erections.
-				Pussy: [
-					{ Expression: "Hard", Limit: 50 },
-					{ Expression: null, Limit: 0 },
-				],
-			};
-		}
-
-		/** @type {{[key: string]: ExpressionName[]}} */
-		const bceExpressionModifierMap = Object.freeze({
-			Blush: [null, "Low", "Medium", "High", "VeryHigh", "Extreme"],
-		});
-
-		const AUTOMATED_AROUSAL_EVENT_TYPE = "AutomatedByArousal",
-			DEFAULT_EVENT_TYPE = "DEFAULT",
-			GAME_TIMED_EVENT_TYPE = "GameTimer",
-			MANUAL_OVERRIDE_EVENT_TYPE = "ManualOverride",
-			POST_ORGASM_EVENT_TYPE = "PostOrgasm";
-
-		/** @type {ExpressionEvent[]} */
-		const bceExpressionsQueue = [];
-		let lastUniqueId = 0;
-
-		/** @type {() => number} */
-		function newUniqueId() {
-			lastUniqueId = (lastUniqueId + 1) % (Number.MAX_SAFE_INTEGER - 1);
-			return lastUniqueId;
-		}
-
-		/** @type {Partial<Record<'Eyes' | 'Eyes2' | 'Eyebrows' | 'Mouth' | 'Fluids' | 'Emoticon' | 'Blush' | 'Pussy', string | null>>} */
-		const manualComponents = {};
-
-		/** @type {(evt: ExpressionEvent) => void} */
-		function pushEvent(evt) {
-			if (!evt) {
-				return;
-			}
-			switch (evt.Type) {
-				case AUTOMATED_AROUSAL_EVENT_TYPE:
-				case POST_ORGASM_EVENT_TYPE:
-					if (!fbcSettings.expressions) {
-						return;
-					}
-					break;
-				case MANUAL_OVERRIDE_EVENT_TYPE:
-					break;
-				default:
-					if (!fbcSettings.activityExpressions) {
-						return;
-					}
-			}
-			const time = Date.now();
-			// Deep copy
-			/** @type {ExpressionEvent} */
-			const event = deepCopy(evt);
-			event.At = time;
-			event.Until = time + event.Duration;
-			event.Id = newUniqueId();
-			if (typeof event.Priority !== "number") {
-				event.Priority = 1;
-			}
-			if (event.Expression) {
-				for (const t of Object.values(event.Expression)) {
-					for (const exp of t) {
-						exp.Id = newUniqueId();
-						if (typeof exp.Priority !== "number") {
-							exp.Priority = 1;
-						}
-						if (typeof exp.Duration !== "number") {
-							exp.Duration = event.Duration;
-						}
-					}
-				}
-			}
-			if (event.Poses) {
-				for (const p of event.Poses) {
-					p.Id = newUniqueId();
-					if (typeof p.Priority !== "number") {
-						p.Priority = 1;
-					}
-				}
-			}
-			bceExpressionsQueue.push(event);
-		}
-		w.fbcPushEvent = pushEvent;
-
-		if (!w.bce_EventExpressions) {
-			// eslint-disable-next-line camelcase
-			w.bce_EventExpressions = {
-				PostOrgasm: {
-					Type: POST_ORGASM_EVENT_TYPE,
-					Duration: 20000,
-					Priority: 10000,
-					Expression: {
-						Blush: [
-							{ Expression: "Extreme", Duration: 5000 },
-							{ ExpressionModifier: -1, Duration: 5000 },
-							{ ExpressionModifier: -1, Duration: 5000, Priority: 1000 },
-							{ ExpressionModifier: -1, Duration: 5000, Priority: 200 },
-						],
-						Eyes: [
-							{ Expression: "Closed", Duration: 8500 },
-							{ Expression: "Heart", Duration: 7500 },
-							{ Expression: "Sad", Duration: 4000, Priority: 200 },
-						],
-						Eyes2: [
-							{ Expression: "Closed", Duration: 8000 },
-							{ Expression: "Heart", Duration: 8000 },
-							{ Expression: "Sad", Duration: 4000, Priority: 200 },
-						],
-						Mouth: [
-							{ Expression: "Ahegao", Duration: 5000 },
-							{ Expression: "Moan", Duration: 5000 },
-							{ Expression: "HalfOpen", Duration: 10000, Priority: 200 },
-						],
-						Fluids: [
-							{ Expression: "DroolMessy", Duration: 5000 },
-							{ Expression: "DroolSides", Duration: 9000, Priority: 400 },
-							{ Expression: "DroolLow", Duration: 6000, Priority: 200 },
-						],
-						Eyebrows: [
-							{ Expression: "Soft", Duration: 10000 },
-							{ Expression: "Lowered", Duration: 5000, Priority: 200 },
-							{ Expression: null, Duration: 5000, Priority: 1 },
-						],
-					},
-				},
-				Pout: {
-					Type: "Pout",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Pout", Duration: -1 }],
-						Eyes: [{ Expression: "Dazed", Duration: -1 }],
-						Eyes2: [{ Expression: "Dazed", Duration: -1 }],
-						Eyebrows: [{ Expression: "Harsh", Duration: -1 }],
-					},
-				},
-				ResetBrows: {
-					Type: "ResetBrows",
-					Duration: -1,
-					Expression: {
-						Eyebrows: [{ Expression: null, Duration: -1 }],
-					},
-				},
-				RaiseBrows: {
-					Type: "RaiseBrows",
-					Duration: -1,
-					Expression: {
-						Eyebrows: [{ Expression: "Raised", Duration: -1 }],
-					},
-				},
-				Confused: {
-					Type: "Confused",
-					Duration: -1,
-					Expression: {
-						Eyebrows: [{ Expression: "OneRaised", Duration: -1 }],
-					},
-				},
-				Smirk: {
-					Type: "Smirk",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Smirk", Duration: -1 }],
-					},
-				},
-				Wink: {
-					Type: "Wink",
-					Duration: 1500,
-					Expression: {
-						Eyes: [{ Expression: "Closed", Duration: 1500 }],
-					},
-				},
-				Laugh: {
-					Type: "Laugh",
-					Duration: 8000,
-					Expression: {
-						Mouth: [
-							{ Expression: "Laughing", Duration: 1000 },
-							{ Expression: "Grin", Duration: 200 },
-							{ Expression: "Laughing", Duration: 1000 },
-							{ Expression: "Happy", Duration: 200 },
-							{ Expression: "Laughing", Duration: 800 },
-							{ Expression: "Grin", Duration: 400 },
-							{ Expression: "Laughing", Duration: 800 },
-							{ Expression: "Happy", Duration: 400 },
-							{ Expression: "Laughing", Duration: 600 },
-							{ Expression: "Grin", Duration: 600 },
-							{ Expression: "Laughing", Duration: 600 },
-							{ Expression: "Happy", Duration: 600 },
-							{ Expression: "Laughing", Duration: 200 },
-							{ Expression: "Grin", Duration: 200 },
-							{ Expression: "Laughing", Duration: 200 },
-							{ Expression: "Happy", Duration: 200 },
-						],
-					},
-				},
-				Giggle: {
-					Type: "Giggle",
-					Duration: 4000,
-					Expression: {
-						Mouth: [
-							{ Expression: "Laughing", Duration: 800 },
-							{ Expression: "Grin", Duration: 200 },
-							{ Expression: "Laughing", Duration: 700 },
-							{ Expression: "Happy", Duration: 200 },
-							{ Expression: "Laughing", Duration: 600 },
-							{ Expression: "Grin", Duration: 200 },
-							{ Expression: "Laughing", Duration: 500 },
-							{ Expression: "Grin", Duration: 200 },
-							{ Expression: "Laughing", Duration: 400 },
-							{ Expression: "Happy", Duration: 200 },
-						],
-					},
-				},
-				Chuckle: {
-					Type: "Chuckle",
-					Duration: 4000,
-					Expression: {
-						Mouth: [{ Expression: "Grin", Duration: 4000 }],
-					},
-				},
-				Smile: {
-					Type: "Smile",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Grin", Duration: -1 }],
-					},
-				},
-				Blink: {
-					Type: "Blink",
-					Duration: 200,
-					Expression: {
-						Eyes: [{ Expression: "Closed", Duration: 200 }],
-						Eyes2: [{ Expression: "Closed", Duration: 200 }],
-					},
-				},
-				Grin: {
-					Type: "Grin",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Horny", Duration: -1 }],
-						Eyes2: [{ Expression: "Horny", Duration: -1 }],
-						Mouth: [{ Expression: "Grin", Duration: -1 }],
-					},
-				},
-				Cuddle: {
-					Type: "Cuddle",
-					Duration: 10000,
-					Priority: 150,
-					Expression: {
-						Mouth: [{ Expression: "Happy", Duration: 10000 }],
-						Eyes: [{ Expression: "ShylyHappy", Duration: 10000 }],
-						Eyes2: [{ Expression: "ShylyHappy", Duration: 10000 }],
-						Eyebrows: [{ Expression: "Raised", Duration: 10000 }],
-					},
-				},
-				Blush: {
-					Type: "Blush",
-					Duration: 10000,
-					Expression: {
-						Blush: [{ ExpressionModifier: 1, Duration: 10000 }],
-					},
-				},
-				Choke: {
-					Type: "Choke",
-					Duration: 4000,
-					Priority: 150,
-					Expression: {
-						Blush: [{ ExpressionModifier: 3, Duration: 4000 }],
-						Eyes: [
-							{ Expression: "VeryLewd", Duration: 3000 },
-							{ Expression: "Sad", Duration: 1000 },
-						],
-						Eyes2: [
-							{ Expression: "VeryLewd", Duration: 3000 },
-							{ Expression: "Sad", Duration: 1000 },
-						],
-						Eyebrows: [{ Expression: "Harsh", Duration: 4000 }],
-					},
-				},
-				Stimulated: {
-					Type: "Stimulated",
-					Duration: 5000,
-					Priority: 400,
-					Expression: {
-						Blush: [{ ExpressionModifier: 2, Duration: 5000 }],
-						Eyes: [
-							{ Expression: "VeryLewd", Duration: 4000 },
-							{ Expression: "Sad", Duration: 1000 },
-						],
-						Eyes2: [
-							{ Expression: "VeryLewd", Duration: 4000 },
-							{ Expression: "Sad", Duration: 1000 },
-						],
-						Eyebrows: [{ Expression: "Soft", Duration: 5000 }],
-					},
-				},
-				StimulatedLong: {
-					Type: "StimulatedLong",
-					Duration: 20000,
-					Priority: 400,
-					Expression: {
-						Blush: [{ ExpressionModifier: 1, Duration: 20000 }],
-					},
-				},
-				Shock: {
-					Type: "Shock",
-					Duration: 15000,
-					Priority: 1000,
-					Expression: {
-						Blush: [
-							{ ExpressionModifier: 5, Duration: 10000 },
-							{ ExpressionModifier: -1, Duration: 2000 },
-							{ ExpressionModifier: -1, Duration: 2000 },
-							{ ExpressionModifier: -1, Duration: 1000 },
-						],
-						Eyes: [
-							{ Expression: "Dizzy", Duration: 1000 },
-							{ Expression: "Scared", Duration: 8000 },
-							{ Expression: "Surprised", Duration: 7000 },
-						],
-						Eyes2: [
-							{ Expression: "Dizzy", Duration: 1000 },
-							{ Expression: "Scared", Duration: 8000 },
-							{ Expression: "Surprised", Duration: 7000 },
-						],
-						Eyebrows: [{ Expression: "Soft", Duration: 15000 }],
-						Mouth: [
-							{ Expression: "Pained", Duration: 10000 },
-							{ Expression: "Angry", Duration: 5000 },
-						],
-					},
-				},
-				ShockLight: {
-					Type: "ShockLight",
-					Duration: 5000,
-					Priority: 900,
-					Expression: {
-						Blush: [{ ExpressionModifier: 2, Duration: 5000 }],
-						Eyes: [
-							{ Expression: "Dizzy", Duration: 2000 },
-							{ Expression: "Surprised", Duration: 3000 },
-						],
-						Eyes2: [
-							{ Expression: "Dizzy", Duration: 2000 },
-							{ Expression: "Surprised", Duration: 3000 },
-						],
-						Eyebrows: [{ Expression: "Soft", Duration: 5000 }],
-						Mouth: [{ Expression: "Angry", Duration: 5000 }],
-					},
-				},
-				Hit: {
-					Type: "Hit",
-					Duration: 7000,
-					Priority: 500,
-					Expression: {
-						Blush: [{ Expression: "VeryHigh", Duration: 7000 }],
-						Eyes: [
-							{ Expression: "Daydream", Duration: 1000 },
-							{ Expression: "Closed", Duration: 3000 },
-							{ Expression: "Daydream", Duration: 3000 },
-						],
-						Eyes2: [
-							{ Expression: "Daydream", Duration: 1000 },
-							{ Expression: "Closed", Duration: 3000 },
-							{ Expression: "Daydream", Duration: 3000 },
-						],
-						Eyebrows: [{ Expression: "Soft", Duration: 7000 }],
-					},
-				},
-				Spank: {
-					Type: "Spank",
-					Duration: 3000,
-					Priority: 300,
-					Expression: {
-						Eyes: [{ Expression: "Lewd", Duration: 3000 }],
-						Eyes2: [{ Expression: "Lewd", Duration: 3000 }],
-						Eyebrows: [{ Expression: "Soft", Duration: 3000 }],
-					},
-				},
-				Kiss: {
-					Type: "Kiss",
-					Duration: 2000,
-					Priority: 200,
-					Expression: {
-						Mouth: [{ Expression: "HalfOpen", Duration: 2000 }],
-					},
-				},
-				KissOnLips: {
-					Type: "KissOnLips",
-					Duration: 2000,
-					Priority: 200,
-					Expression: {
-						Eyes: [{ Expression: "Closed", Duration: 2000 }],
-						Eyes2: [{ Expression: "Closed", Duration: 2000 }],
-						Mouth: [{ Expression: "HalfOpen", Duration: 2000 }],
-						Blush: [
-							{ Skip: true, Duration: 1000 },
-							{ ExpressionModifier: 1, Duration: 1000 },
-						],
-					},
-				},
-				LongKiss: {
-					Type: "LongKiss",
-					Duration: 4000,
-					Priority: 200,
-					Expression: {
-						Eyes: [{ Expression: "Closed", Duration: 4000 }],
-						Eyes2: [{ Expression: "Closed", Duration: 4000 }],
-						Mouth: [{ Expression: "Open", Duration: 4000 }],
-						Blush: [
-							{ Skip: true, Duration: 1000 },
-							{ ExpressionModifier: 1, Duration: 1000 },
-							{ ExpressionModifier: 1, Duration: 2000 },
-						],
-					},
-				},
-				Disoriented: {
-					Type: "Disoriented",
-					Duration: 8000,
-					Priority: 250,
-					Expression: {
-						Eyes: [{ Expression: "Dizzy", Duration: 8000 }],
-						Eyes2: [{ Expression: "Dizzy", Duration: 8000 }],
-						Eyebrows: [{ Expression: "Raised", Duration: 8000 }],
-						Blush: [{ ExpressionModifier: 2, Duration: 8000 }],
-					},
-				},
-				Angry: {
-					Type: "Angry",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Angry", Duration: -1 }],
-						Eyes: [{ Expression: "Angry", Duration: -1 }],
-						Eyes2: [{ Expression: "Angry", Duration: -1 }],
-						Eyebrows: [{ Expression: "Angry", Duration: -1 }],
-					},
-				},
-				Sad: {
-					Type: "Sad",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Frown", Duration: -1 }],
-						Eyes: [{ Expression: "Shy", Duration: -1 }],
-						Eyes2: [{ Expression: "Shy", Duration: -1 }],
-						Eyebrows: [{ Expression: "Soft", Duration: -1 }],
-					},
-				},
-				Worried: {
-					Type: "Worried",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Surprised", Duration: -1 }],
-						Eyes2: [{ Expression: "Surprised", Duration: -1 }],
-						Eyebrows: [{ Expression: "Soft", Duration: -1 }],
-					},
-				},
-				Distressed: {
-					Type: "Distressed",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Scared", Duration: -1 }],
-						Eyes2: [{ Expression: "Scared", Duration: -1 }],
-						Eyebrows: [{ Expression: "Soft", Duration: -1 }],
-						Mouth: [{ Expression: "Angry", Duration: -1 }],
-					},
-				},
-				Reset: {
-					Type: "Reset",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: null, Duration: -1 }],
-						Eyes: [{ Expression: null, Duration: -1 }],
-						Eyes2: [{ Expression: null, Duration: -1 }],
-						Eyebrows: [{ Expression: null, Duration: -1 }],
-						Blush: [{ Expression: null, Duration: -1 }],
-						Fluids: [{ Expression: null, Duration: -1 }],
-					},
-				},
-				Cry: {
-					Type: "Cry",
-					Duration: -1,
-					Expression: {
-						Fluids: [{ Expression: "TearsMedium", Duration: -1 }],
-					},
-				},
-				DroolReset: {
-					Type: "DroolReset",
-					Duration: -1,
-					Expression: {
-						Fluids: [{ Expression: null, Duration: -1 }],
-					},
-				},
-				DroolSides: {
-					Type: "DroolSides",
-					Duration: -1,
-					Expression: {
-						Fluids: [{ Expression: "DroolSides", Duration: -1 }],
-					},
-				},
-				BareTeeth: {
-					Type: "BareTeeth",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Angry", Duration: -1 }],
-					},
-				},
-				Happy: {
-					Type: "Happy",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Happy", Duration: -1 }],
-					},
-				},
-				Frown: {
-					Type: "Frown",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Frown", Duration: -1 }],
-					},
-				},
-				Glare: {
-					Type: "Glare",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Angry", Duration: -1 }],
-						Eyes2: [{ Expression: "Angry", Duration: -1 }],
-						Eyebrows: [{ Expression: "Harsh", Duration: -1 }],
-					},
-				},
-				NarrowEyes: {
-					Type: "NarrowEyes",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Horny", Duration: -1 }],
-						Eyes2: [{ Expression: "Horny", Duration: -1 }],
-					},
-				},
-				OpenEyes: {
-					Type: "OpenEyes",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: null, Duration: -1 }],
-						Eyes2: [{ Expression: null, Duration: -1 }],
-					},
-				},
-				CloseEyes: {
-					Type: "CloseEyes",
-					Duration: -1,
-					Expression: {
-						Eyes: [{ Expression: "Closed", Duration: -1 }],
-						Eyes2: [{ Expression: "Closed", Duration: -1 }],
-					},
-				},
-				CloseMouth: {
-					Type: "CloseMouth",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: null, Duration: -1 }],
-					},
-				},
-				OpenMouth: {
-					Type: "OpenMouth",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "Moan", Duration: -1 }],
-					},
-				},
-				LipBite: {
-					Type: "LipBite",
-					Duration: -1,
-					Expression: {
-						Mouth: [{ Expression: "LipBite", Duration: -1 }],
-					},
-				},
-				Lick: {
-					Type: "Lick",
-					Duration: 4000,
-					Priority: 200,
-					Expression: {
-						Mouth: [{ Expression: "Ahegao", Duration: 4000 }],
-						Blush: [{ ExpressionModifier: 1, Duration: 4000 }],
-					},
-				},
-				GagInflate: {
-					Type: "GagInflate",
-					Duration: 4000,
-					Priority: 400,
-					Expression: {
-						Eyes: [{ Expression: "Lewd", Duration: 4000 }],
-						Eyes2: [{ Expression: "Lewd", Duration: 4000 }],
-						Blush: [
-							{ ExpressionModifier: 2, Duration: 2000 },
-							{ ExpressionModifier: -1, Duration: 2000 },
-						],
-					},
-				},
-				Iced: {
-					Type: "Iced",
-					Duration: 4000,
-					Priority: 500,
-					Expression: {
-						Eyes: [
-							{ Expression: "Surprised", Duration: 3000 },
-							{ Expression: null, Duration: 1000 },
-						],
-						Eyes2: [
-							{ Expression: "Surprised", Duration: 3000 },
-							{ Expression: null, Duration: 1000 },
-						],
-						Mouth: [{ Expression: "Angry", Duration: 4000 }],
-					},
-				},
-				AllFours: {
-					Type: "AllFours",
-					Duration: -1,
-					Poses: [{ Pose: ["AllFours"], Duration: -1 }],
-				},
-				SpreadKnees: {
-					Type: "SpreadKnees",
-					Duration: -1,
-					Poses: [{ Pose: ["KneelingSpread"], Duration: -1 }],
-				},
-				Hogtied: {
-					Type: "Hogtied",
-					Duration: -1,
-					Poses: [{ Pose: ["Hogtied"], Duration: -1 }],
-				},
-				Handstand: {
-					Type: "Handstand",
-					Duration: -1,
-					Poses: [{ Pose: ["Suspension", "OverTheHead"], Duration: -1 }],
-				},
-				Stretch: {
-					Type: "Stretch",
-					Priority: 100,
-					Duration: 6000,
-					Poses: [
-						{ Pose: ["OverTheHead"], Duration: 1000 },
-						{ Pose: ["Yoked"], Duration: 1000 },
-						{ Pose: ["BaseUpper"], Duration: 1000 },
-						{ Pose: ["Spread"], Duration: 1000 },
-						{ Pose: ["LegsClosed"], Duration: 1000 },
-						{ Pose: ["BaseLower"], Duration: 1000 },
-					],
-				},
-				SpreadLegs: {
-					Type: "SpreadLegs",
-					Duration: -1,
-					Poses: [{ Pose: ["Spread"], Duration: -1 }],
-				},
-				JumpingJacks: {
-					Type: "JumpingJacks",
-					Priority: 100,
-					Duration: 8000,
-					Poses: [
-						{ Pose: ["OverTheHead", "Spread"], Duration: 1000 },
-						{ Pose: ["BaseUpper", "LegsClosed"], Duration: 1000 },
-						{ Pose: ["OverTheHead", "Spread"], Duration: 1000 },
-						{ Pose: ["BaseUpper", "LegsClosed"], Duration: 1000 },
-						{ Pose: ["OverTheHead", "Spread"], Duration: 1000 },
-						{ Pose: ["BaseUpper", "LegsClosed"], Duration: 1000 },
-						{ Pose: ["OverTheHead", "Spread"], Duration: 1000 },
-						{ Pose: ["BaseUpper", "LegsClosed"], Duration: 1000 },
-					],
-				},
-			};
-		}
-
-		if (!w.bce_ActivityTriggers) {
-			// eslint-disable-next-line camelcase
-			w.bce_ActivityTriggers = [
-				{
-					Event: "Blush",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-ItemMouth-PoliteKiss$/u,
-						},
-					],
-				},
-				{
-					Event: "Stretch",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^stretches (her|his|their) whole body/u,
-						},
-					],
-				},
-				{
-					Event: "JumpingJacks",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^does jumping[ -]?jacks/u,
-						},
-					],
-				},
-				{
-					Event: "AllFours",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(gets on all fours|starts crawling)/u,
-						},
-					],
-				},
-				{
-					Event: "SpreadKnees",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester:
-								/^spreads(( (her|his|their) legs)? on)? (her|his|their) knees/u,
-						},
-					],
-				},
-				{
-					Event: "SpreadLegs",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^spreads (her|his|their) legs apart/u,
-						},
-					],
-				},
-				{
-					Event: "Handstand",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(does a handstand|stands on (her|his|their) hands)/u,
-						},
-					],
-				},
-				{
-					Event: "Hogtied",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester:
-								/^lies( down)? on (the floor|(her|his|their) (tummy|stomach))/u,
-						},
-					],
-				},
-				{
-					Event: "Blush",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^blushes/u,
-						},
-					],
-				},
-				{
-					Event: "Chuckle",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^chuckles/u,
-						},
-					],
-				},
-				{
-					Event: "Laugh",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^laughs/u,
-						},
-					],
-				},
-				{
-					Event: "Giggle",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^giggles/u,
-						},
-					],
-				},
-				{
-					Event: "Smirk",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(smirk(s|ing)|.*with a smirk)/u,
-						},
-					],
-				},
-				{
-					Event: "Wink",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^winks/u,
-						},
-					],
-				},
-				{
-					Event: "Pout",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^pouts/u,
-						},
-					],
-				},
-				{
-					Event: "Blink",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^blinks/u,
-						},
-					],
-				},
-				{
-					Event: "Frown",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^frowns/u,
-						},
-					],
-				},
-				{
-					Event: "Grin",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(grins|is grinning)/u,
-						},
-					],
-				},
-				{
-					Event: "Confused",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester:
-								/^((seems|looks) (confused|curious|suspicious)|raises an eyebrow)/u,
-						},
-					],
-				},
-				{
-					Event: "CloseMouth",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^closes (her|his|their) mouth/u,
-						},
-					],
-				},
-				{
-					Event: "OpenMouth",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^opens (her|his|their) mouth/u,
-						},
-					],
-				},
-				{
-					Event: "Happy",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(looks|seems|is|gets|smiles) happ(il)?y/u,
-						},
-					],
-				},
-				{
-					Event: "Smile",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^smiles/u,
-						},
-					],
-				},
-				{
-					Event: "Distressed",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(looks|seems|is|gets) distressed/u,
-						},
-					],
-				},
-				{
-					Event: "Sad",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(looks|seems|is|gets) sad/u,
-						},
-					],
-				},
-				{
-					Event: "Worried",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(looks|seems|is|gets) (worried|surprised)/u,
-						},
-					],
-				},
-				{
-					Event: "BareTeeth",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(bares (her|his|their) teeth|snarls)/u,
-						},
-					],
-				},
-				{
-					Event: "Angry",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(looks angr(il)?y|(gets|is|seems) angry)/u,
-						},
-					],
-				},
-				{
-					Event: "Glare",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^(glares|looks harshly|gives a (glare|harsh look))/u,
-						},
-					],
-				},
-				{
-					Event: "OpenEyes",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^opens (her|his|their) eyes/u,
-						},
-					],
-				},
-				{
-					Event: "NarrowEyes",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester:
-								/^((squints|narrows) (her|his|their) eyes|narrowly opens (her|his|their) eyes)/u,
-						},
-					],
-				},
-				{
-					Event: "CloseEyes",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^closes (her|his|their) eyes/u,
-						},
-					],
-				},
-				{
-					Event: "ResetBrows",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^lowers (her|his|their) eyebrows/u,
-						},
-					],
-				},
-				{
-					Event: "RaiseBrows",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^raises (her|his|their) eyebrows/u,
-						},
-					],
-				},
-				{
-					Event: "DroolSides",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^drools/u,
-						},
-					],
-				},
-				{
-					Event: "Cry",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester:
-								/^(starts to cry|sheds .* tears?|eyes( start( to)?)? leak)/u,
-						},
-					],
-				},
-				{
-					Event: "Reset",
-					Type: "Emote",
-					Matchers: [
-						{
-							Tester: /^'s (expression|face) returns to normal/u,
-						},
-					],
-				},
-				{
-					Event: "Shock",
-					Type: "Action",
-					Matchers: [
-						{
-							Tester:
-								/^(ActionActivityShockItem|FuturisticVibratorShockTrigger|FuturisticChastityBeltShock\w+|(TriggerShock|(ShockCollar|Collar(Auto)?ShockUnit|(LoveChastityBelt|SciFiPleasurePanties)Shock)Trigger)(1|2))$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "ShockLight",
-					Type: "Action",
-					Matchers: [
-						{
-							Tester:
-								/^(TriggerShock|(ShockCollar|Collar(Auto)?ShockUnit|(LoveChastityBelt|SciFiPleasurePanties)Shock)Trigger)0$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "Hit",
-					Type: "Action",
-					Matchers: [
-						{
-							Tester: /^ActionActivitySpankItem$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "Spank",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-ItemButt-Spank$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-						{
-							Tester: /^ChatSelf-ItemButt-Spank$/u,
-						},
-					],
-				},
-				{
-					Event: "Cuddle",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-.*-Cuddle$/u,
-						},
-						{
-							Tester: /^ChatSelf-.*-Cuddle$/u,
-						},
-					],
-				},
-				{
-					Event: "Stimulated",
-					Type: "Action",
-					Matchers: [
-						{
-							Tester: /^ActionActivityMasturbateItem$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "StimulatedLong",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-.*-(Masturbate|Penetrate).*$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-						{
-							Tester: /^ChatSelf-.*-(Masturbate|Penetrate).*$/u,
-						},
-					],
-				},
-				{
-					Event: "KissOnLips",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-ItemMouth-Kiss$/u,
-						},
-					],
-				},
-				{
-					Event: "Kiss",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-.*-Kiss$/u,
-							Criteria: {
-								SenderIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "Disoriented",
-					Type: "Action",
-					Matchers: [
-						{
-							Tester: /^(KneelDown|StandUp)Fail$/u,
-						},
-					],
-				},
-				{
-					Event: "LipBite",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatSelf-ItemMouth-Bite$/u,
-						},
-					],
-				},
-				{
-					Event: "Lick",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-.*-(Lick|MasturbateTongue)$/u,
-							Criteria: {
-								SenderIsPlayer: true,
-							},
-						},
-					],
-				},
-				{
-					Event: "DroolReset",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-ItemMouth-Caress$/u,
-							Criteria: {
-								TargetIsPlayer: true,
-							},
-						},
-						{
-							Tester: /^ChatSelf-ItemMouth-Caress$/u,
-						},
-					],
-				},
-				{
-					Event: "LongKiss",
-					Type: "Activity",
-					Matchers: [
-						{
-							Tester: /^ChatOther-ItemMouth-FrenchKiss$/u,
-						},
-					],
-				},
-			];
-		}
-
-		/** @type {(dict?: ChatMessageDictionary) => boolean} */
-		function dictHasPlayerTarget(dict) {
-			return (
-				dict?.some(
-					(t) =>
-						t &&
-						"TargetCharacter" in t &&
-						t.TargetCharacter === Player.MemberNumber
-				) || false
-			);
-		}
-
-		registerSocketListener("ChatRoomMessage", (data) => {
-			activityTriggers: for (const trigger of w.bce_ActivityTriggers.filter(
-				(t) => t.Type === data.Type
-			)) {
-				for (const matcher of trigger.Matchers) {
-					if (matcher.Tester.test(data.Content)) {
-						if (matcher.Criteria) {
-							if (
-								matcher.Criteria.SenderIsPlayer &&
-								data.Sender !== Player.MemberNumber
-							) {
-								continue;
-							} else if (
-								matcher.Criteria.TargetIsPlayer &&
-								!dictHasPlayerTarget(data.Dictionary)
-							) {
-								continue;
-							} else if (
-								matcher.Criteria.DictionaryMatchers &&
-								!matcher.Criteria.DictionaryMatchers.some((m) =>
-									data.Dictionary?.find((t) =>
-										// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-										// @ts-ignore - intentional dynamic indexing on statically defined types
-										Object.keys(m).every((k) => m[k] === t[k])
-									)
-								)
-							) {
-								continue;
-							}
-							// Criteria met
-							pushEvent(w.bce_EventExpressions[trigger.Event]);
-						} else if (
-							data.Sender === Player.MemberNumber ||
-							dictHasPlayerTarget(data.Dictionary)
-						) {
-							// Lacking criteria, check for presence of player as source or target
-							pushEvent(w.bce_EventExpressions[trigger.Event]);
-							break activityTriggers;
-						}
-					}
-				}
-			}
-		});
-
-		/** @type {(faceComponent: string) => [ExpressionName, boolean]} */
-		function expression(t) {
-			const properties =
-				Player.Appearance.filter((a) => a.Asset.Group.Name === t)[0]
-					?.Property ?? null;
-			return [properties?.Expression || null, !properties?.RemoveTimer];
-		}
-
-		/** @type {(faceComponent: string, newExpression: ExpressionName, color?: string | string[]) => void} */
-		function setExpression(t, n, color) {
-			if (!n) {
-				n = null;
-			}
-			for (let i = 0; i < Player.Appearance.length; i++) {
-				const appearance = Player.Appearance[i];
-				if (appearance.Asset.Group.Name === t) {
-					if (!appearance.Property) {
-						appearance.Property = {};
-					}
-					appearance.Property.Expression = n;
-					if (color) {
-						Player.Appearance[i].Color = color;
-					}
-					break;
-				}
-			}
-		}
-
-		const poseCategories = /** @type {const} */ ({
-			BodyFull: {
-				Conflicts: ["BodyUpper", "BodyLower"],
-			},
-			BodyUpper: {
-				Conflicts: ["BodyFull"],
-			},
-			BodyLower: {
-				Conflicts: ["BodyFull"],
-			},
-		});
-
-		/**
-		 * @param {unknown} pose
-		 * @returns {pose is keyof typeof poseCategories}
-		 */
-		function hasConflicts(pose) {
-			return isString(pose) && pose in poseCategories;
-		}
-
-		const faceComponents = [
-			"Eyes",
-			"Eyes2",
-			"Eyebrows",
-			"Mouth",
-			"Fluids",
-			"Emoticon",
-			"Blush",
-			"Pussy",
-		];
-
-		// When first initializing, set the current face as manual override
-		pushEvent({
-			Type: MANUAL_OVERRIDE_EVENT_TYPE,
-			Duration: -1,
-			Expression: faceComponents
-				.map((t) => {
-					const [expr] = expression(t);
-					return [t, expr];
-				})
-				.filter((v) => v[1] !== null)
-				.map((v) => [v[0], [{ Expression: v[1] }]])
-				// eslint-disable-next-line no-inline-comments
-				.reduce((a, v) => ({ ...a, [/** @type {string} */ (v[0])]: v[1] }), {}),
-		});
-
-		let lastOrgasm = 0,
-			orgasmCount = 0,
-			wasDefault = false;
-
-		let PreviousArousal = Player.ArousalSettings;
-
-		const ArousalMeterDirection = {
-			None: 0,
-			Down: 1,
-			Up: 2,
-		};
-		let PreviousDirection = ArousalMeterDirection.Up;
-
-		/**
-		 * @param {string[]} types Types to reset
-		 * @param {string[]} skippedTypes Types to skip resetting in addition to automated arousal events
-		 */
-		function resetExpressionQueue(types, skippedTypes = []) {
-			delete Player.ExpressionQueue;
-			bceExpressionsQueue.push(
-				...bceExpressionsQueue
-					.splice(0, bceExpressionsQueue.length)
-					.map((e) => {
-						if (
-							types.includes(e.Type) ||
-							(e.Duration <= 0 &&
-								e.Type !== AUTOMATED_AROUSAL_EVENT_TYPE &&
-								!skippedTypes.includes(e.Type))
-						) {
-							delete e.Expression;
-						}
-						return e;
-					})
-			);
-			// Restore manual overrides, if manual not in types
-			if (!types.includes(MANUAL_OVERRIDE_EVENT_TYPE)) {
-				pushEvent({
-					Type: MANUAL_OVERRIDE_EVENT_TYPE,
-					Duration: -1,
-					Expression: objEntries(manualComponents).reduce(
-						(a, [k, v]) => ({ ...a, [k]: [{ Expression: v }] }),
-						{}
-					),
-				});
-			} else {
-				for (const [k] of objEntries(manualComponents)) {
-					delete manualComponents[k];
-				}
-			}
-		}
-
-		Commands.push({
-			Tag: "r",
-			Description: displayText(
-				"[part of face or 'all']: resets expression overrides on part of or all of face"
-			),
-			Action: (args) => {
-				if (args.length === 0 || args === "all") {
-					resetExpressionQueue([MANUAL_OVERRIDE_EVENT_TYPE]);
-					fbcChatNotify(displayText("Reset all expressions"));
-				} else {
-					const component = `${args[0].toUpperCase()}${args
-						.substring(1)
-						.toLowerCase()}`;
-					for (const e of bceExpressionsQueue
-						.map((a) => a.Expression)
-						.filter(Boolean)) {
-						if (component === "Eyes" && "Eyes2" in e) {
-							delete e.Eyes2;
-						}
-						if (component in e) {
-							delete e[component];
-						}
-					}
-					fbcChatNotify(
-						displayText(`Reset expression on $component`, {
-							$component: component,
-						})
-					);
-				}
-			},
-		});
-
-		Commands.push({
-			Tag: "anim",
-			Description: displayText("['list' or name of emote]: run an animation"),
-			Action: (_1, _2, args) => {
-				if (!fbcSettings.activityExpressions) {
-					fbcChatNotify(
-						displayText(
-							"Activity expressions are not enabled in FBC settings. Unable to run animations."
-						)
-					);
-					return;
-				}
-				if (args[0] === "list") {
-					fbcChatNotify(
-						displayText(`Available animations: $anims`, {
-							$anims: Object.keys(w.bce_EventExpressions).join(", "),
-						})
-					);
-				}
-				const animation = Object.keys(w.bce_EventExpressions).find(
-					(a) => a.toLowerCase() === args[0]?.toLowerCase()
-				);
-				if (animation) {
-					pushEvent(w.bce_EventExpressions[animation]);
-				}
-			},
-		});
-
-		/**
-		 * @param {AssetPoseName} pose
-		 */
-		function getPoseCategory(pose) {
-			return PoseFemale3DCG.find((a) => a.Name === pose)?.Category;
-		}
-
-		/**
-		 * @param {readonly string[]} poses
-		 */
-		function setPoses(poses) {
-			poses = poses.filter((p) => p).map((p) => p.toLowerCase());
-			bceExpressionsQueue.forEach((e) => {
-				if (e.Type === MANUAL_OVERRIDE_EVENT_TYPE) {
-					e.Poses = [];
-				} else if (e.Poses && e.Poses.length > 0) {
-					e.Poses.forEach((p) => {
-						if (p.Pose.length === 0) {
-							return;
-						}
-						if (typeof p.Pose[0] === "string") {
-							return;
-						}
-						const poseList = p.Pose;
-						p.Pose = poseList.filter((pp) => !!getPoseCategory(pp));
-					});
-				}
-			});
-			const poseNames = PoseFemale3DCG.filter((p) =>
-				poses.includes(p.Name.toLowerCase())
-			).map((p) => p.Name);
-			for (const poseName of poseNames) {
-				PoseSetActive(Player, poseName, false);
-			}
-		}
-
-		Commands.push({
-			Tag: "pose",
-			Description: displayText("['list' or list of poses]: set your pose"),
-			Action: (_1, _2, poses) => {
-				if (poses[0] === "list") {
-					const categories = [
-						...new Set(PoseFemale3DCG.map((a) => a.Category)),
-					];
-					for (const category of categories) {
-						const list = PoseFemale3DCG.filter(
-							(a) => a.Category === category
-						)?.map((a) => a.Name);
-						list.sort();
-						fbcChatNotify(`=> ${category}:\n${list.join("\n")}\n\n`);
-					}
-					return;
-				}
-				if (!bceAnimationEngineEnabled()) {
-					fbcChatNotify(
-						displayText(
-							"Warning: animation engine in FBC is disabled. Pose may not be synchronized or set. Enable animation engine in FBC settings."
-						)
-					);
-				}
-				setPoses(poses);
-			},
-		});
-
-		patchFunction(
-			"TimerInventoryRemove",
-			{
-				"CharacterSetFacialExpression(C, C.ExpressionQueue[0].Group, C.ExpressionQueue[0].Expression, undefined, undefined, true);": `if (bceAnimationEngineEnabled()) {
-					fbcPushEvent({
-						Type: "${GAME_TIMED_EVENT_TYPE}",
-						Duration: -1,
-						Expression: {
-							[C.ExpressionQueue[0].Group]: [{ Expression: C.ExpressionQueue[0].Expression, Duration: -1 }]
-						}
-					})
-				} else {
-					CharacterSetFacialExpression(C, C.ExpressionQueue[0].Group, C.ExpressionQueue[0].Expression, undefined, undefined, true);
-				}`,
-			},
-			"Game's timed expressions are not hooked to FBC's animation engine"
-		);
-
-		patchFunction(
-			"ValidationSanitizeProperties",
-			{
-				"delete property.Expression;": `delete property.Expression;
-				if (bceAnimationEngineEnabled()) {
-					if (item?.Asset?.Group?.Name) {
-						CharacterSetFacialExpression(C, item.Asset.Group.Name, null);
-						console.warn("(FBC) Animation engine acknowledged validation-based expression removal for face component", item)
-					} else {
-						console.warn("Unable to determine asset group name for item", item);
-					}
-				}`,
-			},
-			"Prevent animation engine from getting into an endless loop when another addon includes an invalid expression"
-		);
-
-		SDK.hookFunction(
-			"CharacterSetFacialExpression",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			/**
-			 * @param {Parameters<typeof CharacterSetFacialExpression>} args
-			 */
-			(args, next) => {
-				// eslint-disable-next-line prefer-const
-				let [C, AssetGroup, Expression, Timer, Color] = args;
-				if (
-					!isCharacter(C) ||
-					!isString(AssetGroup) ||
-					(!isString(Expression) && Expression !== null) ||
-					!C.IsPlayer() ||
-					!bceAnimationEngineEnabled()
-				) {
-					return next(args);
-				}
-
-				const duration =
-						typeof Timer === "number" && Timer > 0 ? Timer * 1000 : -1,
-					/** @type {Record<string, ExpressionStage[]>} */
-					e = {};
-				/** @type {(keyof typeof manualComponents)[]} */
-				let types = [];
-
-				if (AssetGroup === "Eyes") {
-					types = ["Eyes", "Eyes2"];
-				} else if (AssetGroup === "Eyes1") {
-					types = ["Eyes"];
-				} else {
-					types = [AssetGroup];
-				}
-
-				if (
-					!Color ||
-					!isStringOrStringArray(Color) ||
-					!CommonColorIsValid(Color)
-				) {
-					// eslint-disable-next-line no-undefined
-					Color = undefined;
-				}
-
-				for (const t of types) {
-					e[t] = [{ Expression, Duration: duration, Color }];
-					if (duration < 0) {
-						manualComponents[t] = Expression;
-					}
-				}
-
-				const evt = {
-					Type: MANUAL_OVERRIDE_EVENT_TYPE,
-					Duration: duration,
-					Expression: e,
-				};
-				pushEvent(evt);
-				return CustomArousalExpression();
-			}
-		);
-
-		const poseFuncs = /** @type {const} */ ([
-			"CharacterSetActivePose",
-			"PoseSetActive",
-		]);
-		for (const poseFunc of poseFuncs) {
-			SDK.hookFunction(
-				poseFunc,
-				HOOK_PRIORITIES.OverrideBehaviour,
-				/**
-				 * @param {Parameters<typeof PoseSetActive>} args
-				 */
-				// eslint-disable-next-line no-loop-func
-				(args, next) => {
-					const [C, Pose] = args;
-					if (
-						!isCharacter(C) ||
-						(!isStringOrStringArray(Pose) && Pose !== null) ||
-						!C.IsPlayer() ||
-						!bceAnimationEngineEnabled()
-					) {
-						return next(args);
-					}
-
-					const p = {};
-					if (!Pose || (Array.isArray(Pose) && Pose.every((pp) => !pp))) {
-						p.Pose = /** @type {AssetPoseName[]} */ ([
-							"BaseUpper",
-							"BaseLower",
-						]);
-					} else {
-						p.Pose = [Pose];
-					}
-					p.Duration = -1;
-					const evt = {
-						Type: MANUAL_OVERRIDE_EVENT_TYPE,
-						Duration: -1,
-						Poses: [p],
-					};
-					pushEvent(evt);
-					return CustomArousalExpression();
-				}
-			);
-		}
-
-		registerSocketListener("ChatRoomSyncPose", (data) => {
-			if (data === null || !isNonNullObject(data)) {
-				return;
-			}
-			if (!Array.isArray(data.Pose)) {
-				logWarn(
-					`data.Pose in ChatRoomSyncPose for ${data.MemberNumber?.toString()} is not an array`
-				);
-				return;
-			}
-			if (!bceAnimationEngineEnabled()) {
-				return;
-			}
-			if (data.MemberNumber === Player.MemberNumber) {
-				setPoses(data.Pose);
-			}
-		});
-
-		registerSocketListener("ChatRoomSyncSingle", (data) => {
-			if (data === null || !isNonNullObject(data)) {
-				return;
-			}
-			if (!bceAnimationEngineEnabled()) {
-				return;
-			}
-			if (data.Character?.MemberNumber === Player.MemberNumber) {
-				setPoses(data.Character.ActivePose ?? []);
-			}
-		});
-
-		resetExpressionQueue([MANUAL_OVERRIDE_EVENT_TYPE, GAME_TIMED_EVENT_TYPE]);
-
-		// This is called once per interval to check for expression changes
-		// eslint-disable-next-line complexity
-		function CustomArousalExpression() {
-			if (!bceAnimationEngineEnabled() || !Player?.AppearanceLayers) {
-				return;
-			}
-
-			// Ensure none of the expressions have remove timers on them; we handle timers here
-			Player.Appearance.filter(
-				(a) =>
-					faceComponents.includes(a.Asset.Group.Name) && a.Property?.RemoveTimer
-			).forEach((a) => {
-				// @ts-ignore - a.Property cannot be undefined due to filter above
-				delete a.Property.RemoveTimer;
-			});
-
-			if (!Player.ArousalSettings) {
-				logWarn("Player.ArousalSettings is not defined");
-				return;
-			}
-
-			Player.ArousalSettings.AffectExpression = false;
-
-			const oCount = Player.ArousalSettings.OrgasmCount ?? 0;
-			if (orgasmCount < oCount) {
-				orgasmCount = oCount;
-			} else if (orgasmCount > oCount) {
-				Player.ArousalSettings.OrgasmCount = orgasmCount;
-				ActivityChatRoomArousalSync(Player);
-			}
-
-			// Reset everything when face is fully default
-			let isDefault = true;
-			for (const t of faceComponents) {
-				if (expression(t)[0]) {
-					isDefault = false;
-				}
-			}
-			if (isDefault) {
-				PreviousArousal.Progress = 0;
-				PreviousDirection = ArousalMeterDirection.Up;
-				if (!wasDefault) {
-					for (let i = 0; i < bceExpressionsQueue.length; i++) {
-						if (bceExpressionsQueue[i].Type === AUTOMATED_AROUSAL_EVENT_TYPE) {
-							continue;
-						}
-						bceExpressionsQueue[i].Expression = {};
-					}
-				}
-				wasDefault = true;
-			} else {
-				wasDefault = false;
-			}
-
-			// Detect arousal movement
-			const arousal = Player.ArousalSettings.Progress;
-			let direction = PreviousDirection;
-			if (arousal < PreviousArousal.Progress) {
-				direction = ArousalMeterDirection.Down;
-			} else if (arousal > PreviousArousal.Progress) {
-				direction = ArousalMeterDirection.Up;
-			}
-			PreviousDirection = direction;
-
-			const lastOrgasmAdjustment = () => {
-				// Only boost up to the expression at arousal 90
-				const lastOrgasmMaxArousal = 90,
-					lastOrgasmMaxBoost = 30,
-					orgasms = Player.ArousalSettings?.OrgasmCount || 0;
-				const lastOrgasmBoostDuration = Math.min(300, 60 + orgasms * 5),
-					secondsSinceOrgasm = ((Date.now() - lastOrgasm) / 10000) | 0;
-				if (secondsSinceOrgasm > lastOrgasmBoostDuration) {
-					return 0;
-				}
-				return Math.min(
-					Math.max(0, lastOrgasmMaxArousal - arousal),
-					(lastOrgasmMaxBoost *
-						(lastOrgasmBoostDuration - secondsSinceOrgasm)) /
-						lastOrgasmBoostDuration
-				);
-			};
-
-			// Handle events
-			const OrgasmRecoveryStage = 2;
-			if (
-				PreviousArousal.OrgasmStage !== OrgasmRecoveryStage &&
-				Player.ArousalSettings.OrgasmStage === OrgasmRecoveryStage &&
-				bceExpressionsQueue.filter((a) => a.Type === POST_ORGASM_EVENT_TYPE)
-					.length === 0
-			) {
-				pushEvent(w.bce_EventExpressions.PostOrgasm);
-				lastOrgasm = Date.now();
-			}
-
-			// Keep track of desired changes
-			/** @type {{ [key: string]: ExpressionStage }} */
-			const desiredExpression = {};
-
-			/** @type {Record<string, { Id: number; Pose: AssetPoseName; Category?: string; Duration: number; Priority: number; Type: string }>} */
-			let desiredPose = {};
-
-			/** @type {{ [key: string]: ExpressionStage }} */
-			const nextExpression = {};
-
-			/** @type {(expression: ExpressionName, stage: ExpressionStage, next: ExpressionEvent, faceComponent: string) => void} */
-			const trySetNextExpression = (e, exp, next, t) => {
-				const priority = exp.Priority || next.Priority || 0;
-				if (
-					!nextExpression[t] ||
-					(nextExpression[t].Priority ?? 0) <= priority
-				) {
-					nextExpression[t] = {
-						Id: exp.Id,
-						Expression: e,
-						Duration: exp.Duration,
-						Priority: priority,
-						Color: exp.Color,
-					};
-				}
-			};
-
-			// Calculate next expression
-			for (let j = 0; j < bceExpressionsQueue.length; j++) {
-				const next = bceExpressionsQueue[j];
-				const nextUntil = next.Until ?? 0;
-				const nextAt = next.At ?? 0;
-				let active = false;
-				if (nextUntil > Date.now() || nextUntil - nextAt < 0) {
-					const nextExpr = next.Expression ?? {};
-					if (Object.keys(nextExpr).length > 0) {
-						for (const t of Object.keys(nextExpr)) {
-							let durationNow = Date.now() - nextAt;
-							for (let i = 0; i < nextExpr[t].length; i++) {
-								/** @type {ExpressionStage} */
-								const exp = nextExpr[t][i];
-								durationNow -= exp.Duration;
-								if (durationNow < 0 || exp.Duration < 0) {
-									active = true;
-									if (!exp.Skip) {
-										if (
-											exp.ExpressionModifier &&
-											t in bceExpressionModifierMap
-										) {
-											const [current] = expression(t);
-											if (!exp.Applied) {
-												/** @type {number} */
-												let idx =
-													bceExpressionModifierMap[t].indexOf(current) +
-													exp.ExpressionModifier;
-												if (idx >= bceExpressionModifierMap[t].length) {
-													idx = bceExpressionModifierMap[t].length - 1;
-												} else if (idx < 0) {
-													idx = 0;
-												}
-												trySetNextExpression(
-													bceExpressionModifierMap[t][idx],
-													exp,
-													next,
-													t
-												);
-												// @ts-ignore - not undefined, ts is a derp
-												bceExpressionsQueue[j].Expression[t][i].Applied = true;
-											} else {
-												// Prevent being overridden by other expressions while also not applying a change
-												trySetNextExpression(current, exp, next, t);
-											}
-										} else {
-											trySetNextExpression(
-												exp.Expression ?? null,
-												exp,
-												next,
-												t
-											);
-										}
-									}
-									break;
-								}
-							}
-						}
-					}
-					if (next.Poses?.length) {
-						let durationNow = Date.now() - nextAt;
-						for (const pose of next.Poses) {
-							durationNow -= pose.Duration;
-							if (durationNow < 0 || pose.Duration < 0) {
-								active = true;
-								for (const p of pose.Pose) {
-									const priority = pose.Priority || next.Priority || 0;
-									const category = getPoseCategory(p);
-									if (!category) {
-										logWarn(`Pose ${p} has no category`);
-										continue;
-									}
-
-									if (!pose.Id) {
-										logWarn(`Pose ${p} has no ID`);
-										pose.Id = newUniqueId();
-									}
-
-									if (
-										!desiredPose[category] ||
-										desiredPose[category].Priority <= priority
-									) {
-										desiredPose[category] = {
-											Id: pose.Id,
-											Pose: p,
-											Category: category,
-											Duration: pose.Duration,
-											Priority: priority,
-											Type: next.Type,
-										};
-									}
-								}
-								break;
-							}
-						}
-					}
-				}
-				if (!active) {
-					const last = bceExpressionsQueue.splice(j, 1);
-					j--;
-					if (
-						!fbcSettings.expressions &&
-						last.length > 0 &&
-						last[0].Expression
-					) {
-						for (const t of Object.keys(last[0].Expression)) {
-							trySetNextExpression(
-								null,
-								{ Duration: -1 },
-								{
-									Priority: 0,
-									Type: DEFAULT_EVENT_TYPE,
-									Duration: 500,
-								},
-								t
-							);
-						}
-					}
-				}
-			}
-
-			// Garbage collect unused expressions - this should occur before manual expressions are detected
-			for (let j = 0; j < bceExpressionsQueue.length; j++) {
-				const qExpr = bceExpressionsQueue[j].Expression;
-				const qPoses = bceExpressionsQueue[j].Poses;
-				if (qExpr) {
-					for (const t of Object.keys(qExpr)) {
-						if (!nextExpression[t] || nextExpression[t].Duration > 0) {
-							continue;
-						}
-						const nextId = mustNum(nextExpression[t].Id),
-							nextPriority = mustNum(nextExpression[t].Priority, 0);
-
-						for (let i = 0; i < qExpr[t].length; i++) {
-							const exp = qExpr[t][i];
-							if (
-								exp.Duration < 0 &&
-								(mustNum(exp.Id) < nextId ||
-									mustNum(exp.Priority, 0) < nextPriority)
-							) {
-								qExpr[t].splice(i, 1);
-								i--;
-							}
-						}
-						if (qExpr[t].length === 0) {
-							delete qExpr[t];
-						}
-					}
-				}
-				if (qPoses) {
-					for (let k = 0; k < qPoses.length; k++) {
-						const pose = qPoses[k];
-						const poseList = pose.Pose;
-						const desiredIsNewerAndInfinite = poseList.every(
-							// eslint-disable-next-line no-loop-func
-							(p) => {
-								const category = getPoseCategory(p);
-								return (
-									!!category &&
-									desiredPose[category]?.Duration < 0 &&
-									desiredPose[category]?.Id > mustNum(pose.Id) &&
-									(desiredPose[category]?.Type === MANUAL_OVERRIDE_EVENT_TYPE ||
-										bceExpressionsQueue[j].Type !== MANUAL_OVERRIDE_EVENT_TYPE)
-								);
-							}
-						);
-						if (pose.Duration < 0 && desiredIsNewerAndInfinite) {
-							qPoses.splice(k, 1);
-							k--;
-						}
-					}
-				}
-				if (
-					Object.keys(bceExpressionsQueue[j].Expression || {}).length === 0 &&
-					bceExpressionsQueue[j].Poses?.length === 0
-				) {
-					bceExpressionsQueue.splice(j, 1);
-					j--;
-				}
-			}
-
-			// Clean up unused poses
-			let needsRefresh = false;
-			/** @type {false | AssetPoseName[]} */
-			let poseUpdate = false;
-			if (Player.ActivePose) {
-				for (let i = 0; i < Player.ActivePose.length; i++) {
-					const pose = Player.ActivePose[i];
-					const p = PoseFemale3DCG.find((pp) => pp.Name === pose);
-					if (
-						!p?.Category &&
-						Object.values(desiredPose).every((v) => v.Pose !== pose)
-					) {
-						poseUpdate = [...Player.ActivePose];
-						poseUpdate.splice(i, 1);
-						i--;
-						needsRefresh = true;
-					}
-				}
-			}
-
-			// Handle arousal-based expressions
-			outer: for (const t of Object.keys(w.bce_ArousalExpressionStages)) {
-				const [exp] = expression(t);
-				/** @type {ExpressionName} */
-				let chosenExpression = null;
-				let expressionChosen = false;
-				for (const face of w.bce_ArousalExpressionStages[t]) {
-					const limit =
-						face.Limit - (direction === ArousalMeterDirection.Up ? 0 : 1);
-					if (arousal + lastOrgasmAdjustment() >= limit) {
-						if (face.Expression !== exp) {
-							chosenExpression = face.Expression;
-							expressionChosen = true;
-							break;
-						} else {
-							continue outer;
-						}
-					}
-				}
-				if (expressionChosen) {
-					/** @type {ExpressionStages} */
-					const e = {};
-					e[t] = [{ Expression: chosenExpression, Duration: -1, Priority: 0 }];
-					pushEvent({
-						Type: AUTOMATED_AROUSAL_EVENT_TYPE,
-						Duration: -1,
-						Priority: 0,
-						// @ts-ignore
-						Expression: e,
-					});
-				}
-			}
-
-			for (const t of faceComponents) {
-				const [exp] = expression(t),
-					nextExp = nextExpression[t] || {
-						Duration: -1,
-						Expression: null,
-					};
-				if (
-					nextExp.Expression !== exp &&
-					typeof nextExp.Expression !== "undefined"
-				) {
-					desiredExpression[t] = { ...nextExp };
-				}
-			}
-
-			if (Object.keys(desiredExpression).length > 0) {
-				for (const t of Object.keys(desiredExpression)) {
-					if (
-						BCX?.getRuleState("block_changing_emoticon")?.isEnforced &&
-						t === "Emoticon"
-					) {
-						continue;
-					}
-					setExpression(
-						t,
-						desiredExpression[t].Expression ?? null,
-						desiredExpression[t].Color
-					);
-					ServerSend("ChatRoomCharacterExpressionUpdate", {
-						// @ts-ignore - null is a valid name, mistake in BC-stubs
-						Name: desiredExpression[t].Expression ?? null,
-						Group: t,
-						Appearance: ServerAppearanceBundle(Player.Appearance),
-					});
-				}
-
-				needsRefresh = true;
-			}
-
-			// Figure out desiredPose conflicts
-			function resolvePoseConflicts() {
-				const maxPriority = Math.max(
-					...Object.values(desiredPose).map((p) => p.Priority)
-				);
-
-				const maxPriorityPoses = objEntries(desiredPose).filter(
-					(p) => p[1].Priority === maxPriority
-				);
-
-				let maxPriorityPose = "";
-
-				if (maxPriorityPoses.length > 1) {
-					const maxId = Math.max(...maxPriorityPoses.map((p) => p[1].Id)),
-						maxIdPoses = maxPriorityPoses.filter((p) => p[1].Id === maxId);
-					[[maxPriorityPose]] = maxIdPoses;
-				} else if (maxPriorityPoses.length === 0) {
-					return 0;
-				} else {
-					[[maxPriorityPose]] = maxPriorityPoses;
-				}
-				let deleted = 0;
-				if (hasConflicts(maxPriorityPose)) {
-					const conflicts = poseCategories[maxPriorityPose].Conflicts || [];
-					for (const conflict of Array.from(conflicts).filter(
-						(c) => c in desiredPose
-					)) {
-						delete desiredPose[conflict];
-						deleted++;
-					}
-				}
-				return deleted;
-			}
-			while (resolvePoseConflicts() > 0) {
-				// Intentionally empty
-			}
-
-			if (Object.keys(desiredPose).length === 0) {
-				desiredPose = {
-					BodyUpper: {
-						Pose: "BaseUpper",
-						Duration: -1,
-						Id: newUniqueId(),
-						Priority: 0,
-						Type: DEFAULT_EVENT_TYPE,
-					},
-					BodyLower: {
-						Pose: "BaseLower",
-						Duration: -1,
-						Id: newUniqueId(),
-						Priority: 0,
-						Type: DEFAULT_EVENT_TYPE,
-					},
-				};
-			}
-			const basePoseMatcher = /^Base(Lower|Upper)$/u;
-			const newPose = Object.values(desiredPose)
-				.map((p) => p.Pose)
-				.filter((p) => !basePoseMatcher.test(p));
-			if (JSON.stringify(Player.ActivePose) !== JSON.stringify(newPose)) {
-				poseUpdate = newPose;
-				needsRefresh = true;
-			}
-
-			if (poseUpdate) {
-				Player.ActivePose = poseUpdate;
-				ServerSend("ChatRoomCharacterPoseUpdate", {
-					Pose: poseUpdate,
-				});
-			}
-
-			if (needsRefresh) {
-				CharacterRefresh(Player, false, false);
-			}
-
-			PreviousArousal = { ...Player.ArousalSettings };
-		}
-
-		createTimer(CustomArousalExpression, 250);
 	}
 
 	async function layeringMenu() {
@@ -6541,51 +3812,6 @@ async function ForBetterClub() {
 		}
 	}
 
-	function cacheClearer() {
-		const cacheClearInterval = 1 * 60 * 60 * 1000;
-
-		w.bceClearCaches = async function () {
-			const start = Date.now();
-			if (
-				!(await waitFor(
-					// Only clear when in chat room and not inspecting a character
-					() => CurrentScreen === "ChatRoom" && !CurrentCharacter,
-					() => Date.now() - start > cacheClearInterval
-				))
-			) {
-				return;
-			}
-			if (!fbcSettings.automateCacheClear) {
-				return;
-			}
-
-			debug("Clearing caches");
-			if (GLDrawCanvas.GL?.textureCache) {
-				GLDrawCanvas.GL.textureCache.clear();
-			}
-			GLDrawResetCanvas();
-
-			debug("Clearing old characters from cache");
-			const oldOnlineCharacters = Character.filter(
-				(c) =>
-					c.IsOnline?.() &&
-					!ChatRoomCharacter.some((cc) => cc.MemberNumber === c.MemberNumber)
-			);
-			oldOnlineCharacters.forEach((c) => CharacterDelete(c));
-			Character.filter((c) => c.IsOnline?.()).forEach((c) =>
-				CharacterRefresh(c, false, false)
-			);
-		};
-
-		const clearCaches = () => {
-			if (fbcSettings.automateCacheClear) {
-				w.bceClearCaches();
-			}
-		};
-
-		createTimer(clearCaches, cacheClearInterval);
-	}
-
 	function chatRoomOverlay() {
 		SDK.hookFunction(
 			"ChatRoomDrawCharacterStatusIcons",
@@ -6676,18 +3902,6 @@ async function ForBetterClub() {
 	if (ServerIsConnected && ServerPlayerIsInChatRoom()) {
 		sendHello(null, true);
 	}
-	createTimer(() => {
-		const loadedAddons = bcModSdk.getModsInfo();
-		if (
-			fbcSettings.shareAddons &&
-			JSON.stringify(loadedAddons) !== JSON.stringify(Player.FBCOtherAddons) &&
-			ServerIsConnected &&
-			ServerPlayerIsInChatRoom()
-		) {
-			Player.FBCOtherAddons = loadedAddons;
-			sendHello(null, true);
-		}
-	}, 5000);
 
 	async function hiddenMessageHandler() {
 		await waitFor(() => ServerSocket && ServerIsConnected);
@@ -7744,175 +4958,6 @@ async function ForBetterClub() {
 				);
 			}
 		});
-	}
-
-	async function blindWithoutGlasses() {
-		await waitFor(() => !!Player && !!Player.Appearance);
-
-		function checkBlindness() {
-			if (!fbcSettings.blindWithoutGlasses) {
-				return;
-			}
-
-			const glasses = [
-					"Glasses1",
-					"Glasses2",
-					"Glasses3",
-					"Glasses4",
-					"Glasses5",
-					"Glasses6",
-					"SunGlasses1",
-					"SunGlasses2",
-					"SunGlassesClear",
-					"CatGlasses",
-					"VGlasses",
-					"GradientSunglasses",
-					"FuturisticVisor",
-					"InteractiveVisor",
-					"InteractiveVRHeadset",
-					"FuturisticMask",
-					"Goggles",
-				],
-				hasGlasses = !!Player.Appearance.find((a) =>
-					glasses.includes(a.Asset.Name)
-				);
-
-			if (hasGlasses) {
-				if (removeCustomEffect("BlurLight")) {
-					fbcChatNotify(
-						displayText("Having recovered your glasses you can see again!")
-					);
-				}
-			} else if (addCustomEffect("BlurLight")) {
-				fbcChatNotify(
-					displayText("Having lost your glasses your eyesight is impaired!")
-				);
-			}
-		}
-
-		SDK.hookFunction(
-			"GameRun",
-			HOOK_PRIORITIES.Observe,
-			/**
-			 * @param {Parameters<typeof GameRun>} args
-			 */ (args, next) => {
-				checkBlindness();
-				return next(args);
-			}
-		);
-	}
-
-	async function friendPresenceNotifications() {
-		await waitFor(() => !!Player && ServerSocket && ServerIsConnected);
-
-		function checkFriends() {
-			if (
-				!fbcSettings.friendPresenceNotifications &&
-				!fbcSettings.instantMessenger
-			) {
-				return;
-			}
-			if (
-				CurrentScreen === "FriendList" ||
-				CurrentScreen === "Relog" ||
-				CurrentScreen === "Login"
-			) {
-				return;
-			}
-			ServerSend("AccountQuery", { Query: "OnlineFriends" });
-		}
-		createTimer(checkFriends, 20000);
-
-		/** @type {Friend[]} */
-		let lastFriends = [];
-		registerSocketListener("AccountQueryResult", (data) => {
-			if (
-				CurrentScreen === "FriendList" ||
-				CurrentScreen === "Relog" ||
-				CurrentScreen === "Login"
-			) {
-				return;
-			}
-			if (!fbcSettings.friendPresenceNotifications) {
-				return;
-			}
-			if (data.Query !== "OnlineFriends") {
-				return;
-			}
-			const friendMemberNumbers = data.Result.map((f) => f.MemberNumber),
-				offlineFriends = lastFriends
-					.map((f) => f.MemberNumber)
-					.filter((f) => !friendMemberNumbers.includes(f)),
-				onlineFriends = friendMemberNumbers.filter(
-					(f) => !lastFriends.some((ff) => ff.MemberNumber === f)
-				);
-			if (onlineFriends.length) {
-				const list = onlineFriends
-					.map((f) => {
-						const { MemberNumber, MemberName } = data.Result.find(
-							(d) => d.MemberNumber === f
-						) ?? { MemberName: "", MemberNumber: -1 };
-						return `${MemberName} (${MemberNumber})`;
-					})
-					.join(", ");
-				if (
-					fbcSettings.friendNotificationsInChat &&
-					CurrentScreen === "ChatRoom"
-				) {
-					fbcChatNotify(displayText(`Now online: $list`, { $list: list }));
-				} else {
-					fbcNotify(displayText(`Now online: $list`, { $list: list }), 5000, {
-						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
-					});
-				}
-			}
-			if (fbcSettings.friendOfflineNotifications && offlineFriends.length) {
-				const list = offlineFriends
-					.map((f) => {
-						const { MemberNumber, MemberName } = lastFriends.find(
-							(d) => d.MemberNumber === f
-						) ?? { MemberName: "", MemberNumber: -1 };
-						return `${MemberName} (${MemberNumber})`;
-					})
-					.join(", ");
-				if (
-					fbcSettings.friendNotificationsInChat &&
-					CurrentScreen === "ChatRoom"
-				) {
-					fbcChatNotify(displayText(`Now offline: $list`, { $list: list }));
-				} else {
-					fbcNotify(displayText(`Now offline: $list`, { $list: list }), 5000, {
-						ClickAction: BEEP_CLICK_ACTIONS.FriendList,
-					});
-				}
-			}
-			lastFriends = data.Result;
-		});
-
-		SDK.hookFunction(
-			"ServerClickBeep",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			/**
-			 * @param {Parameters<typeof ServerClickBeep>} args
-			 */
-			(args, next) => {
-				if (
-					ServerBeep.Timer > Date.now() &&
-					MouseIn(CurrentScreen === "ChatRoom" ? 0 : 500, 0, 1000, 50) &&
-					CurrentScreen !== "FriendList"
-				) {
-					// @ts-ignore - ClickAction is not in the original game, but we specify it above for ServerBeeps
-					switch (ServerBeep.ClickAction) {
-						case BEEP_CLICK_ACTIONS.FriendList:
-							ServerOpenFriendList();
-							return null;
-						default:
-							break;
-					}
-				}
-				return next(args);
-			}
-		);
 	}
 
 	function itemAntiCheat() {
@@ -9452,116 +6497,6 @@ async function ForBetterClub() {
 		chatMessageElement.setAttribute("bce-original-text", originalText);
 	}
 
-	function customContentDomainCheck() {
-		const trustedOrigins = ["https://fs.kinkop.eu", "https://i.imgur.com"];
-
-		let open = false;
-		/**
-		 * @param {string} origin
-		 * @param {"image" | "music" | null} type
-		 */
-		function showCustomContentDomainCheckWarning(origin, type = null) {
-			if (open) {
-				return;
-			}
-			open = true;
-			FUSAM.modals.open({
-				prompt: displayText(
-					`Do you want to allow 3rd party ${
-						type ?? "content"
-					} to be loaded from $origin? $trusted`,
-					{
-						$origin: origin,
-						$trusted: trustedOrigins.includes(origin)
-							? displayText("(This origin is trusted by authors of FBC)")
-							: "",
-					}
-				),
-				callback: (act) => {
-					open = false;
-					if (act === "submit") {
-						sessionCustomOrigins.set(origin, "allowed");
-					} else if (act === "cancel") {
-						sessionCustomOrigins.set(origin, "denied");
-					}
-				},
-				buttons: {
-					cancel: displayText("Deny for session"),
-					submit: displayText("Allow for session"),
-				},
-			});
-		}
-
-		SDK.hookFunction(
-			"ChatAdminRoomCustomizationProcess",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			/**
-			 * @param {Parameters<typeof ChatAdminRoomCustomizationProcess>} args
-			 */
-			(args, next) => {
-				if (!fbcSettings.customContentDomainCheck) {
-					return next(args);
-				}
-
-				try {
-					// @ts-ignore - the function's types are garbage
-					const [{ ImageURL, MusicURL }] = args;
-
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument
-					const imageOrigin = ImageURL && new URL(ImageURL).origin;
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument
-					const musicOrigin = MusicURL && new URL(MusicURL).origin;
-
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-					if (imageOrigin && !sessionCustomOrigins.has(imageOrigin)) {
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-						showCustomContentDomainCheckWarning(imageOrigin, "image");
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-					} else if (musicOrigin && !sessionCustomOrigins.has(musicOrigin)) {
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-						showCustomContentDomainCheckWarning(musicOrigin, "music");
-					}
-
-					if (
-						(!ImageURL ||
-							// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-							sessionCustomOrigins.get(imageOrigin) === "allowed") &&
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-						(!MusicURL || sessionCustomOrigins.get(musicOrigin) === "allowed")
-					) {
-						return next(args);
-					}
-				} catch (_) {
-					// Don't care
-				}
-
-				return null;
-			}
-		);
-
-		SDK.hookFunction(
-			"ChatAdminRoomCustomizationClick",
-			HOOK_PRIORITIES.Observe,
-			/**
-			 * @param {Parameters<typeof ChatAdminRoomCustomizationClick>} args
-			 */
-			(args, next) => {
-				for (const s of [
-					ElementValue("InputImageURL").trim(),
-					ElementValue("InputMusicURL").trim(),
-				]) {
-					try {
-						const url = new URL(s);
-						sessionCustomOrigins.set(url.origin, "allowed");
-					} catch (_) {
-						// Don't care
-					}
-				}
-				return next(args);
-			}
-		);
-	}
-
 	function discreetMode() {
 		/**
 		 * @param {any} args
@@ -9638,76 +6573,6 @@ async function ForBetterClub() {
 				return next(args);
 			}
 		);
-	}
-
-	function autoStruggle() {
-		SDK.hookFunction(
-			"StruggleFlexibilityCheck",
-			HOOK_PRIORITIES.OverrideBehaviour,
-			/**
-			 * @param {Parameters<typeof StruggleFlexibilityCheck>} args
-			 */
-			(args, next) => {
-				if (fbcSettings.autoStruggle) {
-					if (
-						StruggleProgressFlexCircles &&
-						StruggleProgressFlexCircles.length > 0
-					) {
-						StruggleProgressFlexCircles.splice(0, 1);
-						return true;
-					}
-				}
-				return next(args);
-			}
-		);
-
-		createTimer(() => {
-			if (!fbcSettings.autoStruggle) {
-				return;
-			}
-
-			if (typeof StruggleProgress !== "number" || StruggleProgress < 0) {
-				return;
-			}
-
-			if (StruggleProgressCurrentMinigame === "Strength") {
-				StruggleStrengthProcess(false);
-			} else if (StruggleProgressCurrentMinigame === "Flexibility") {
-				if (
-					StruggleProgressFlexCircles &&
-					StruggleProgressFlexCircles.length > 0
-				) {
-					StruggleFlexibilityProcess(false);
-				}
-			}
-		}, 60);
-
-		createTimer(() => {
-			if (!fbcSettings.autoStruggle) {
-				return;
-			}
-
-			if (typeof StruggleProgress !== "number" || StruggleProgress < 0) {
-				return;
-			}
-			if (StruggleProgressCurrentMinigame === "Dexterity") {
-				// Duplicated logic from StruggleDexterity
-				const distMult = Math.max(
-					-0.5,
-					Math.min(
-						1,
-						(85 -
-							Math.abs(
-								StruggleProgressDexTarget - StruggleProgressDexCurrent
-							)) /
-							75
-					)
-				);
-				if (distMult > 0.5) {
-					StruggleDexterityProcess();
-				}
-			}
-		}, 0);
 	}
 
 	function nicknames() {
@@ -9787,231 +6652,6 @@ async function ForBetterClub() {
 		} else {
 			disableLeashing();
 		}
-	}
-
-	function toySync() {
-		// Handles synchronizing in-game vibrators with real bluetooth devices via buttplut.io
-		if (!fbcSettings.toySync) {
-			return;
-		}
-
-		const frame = document.createElement("iframe");
-		frame.src = "./changelog.html";
-		frame.classList.add("bce-false-hidden");
-		const script = document.createElement("script");
-		const notifierScript = document.createElement("script");
-		frame.onload = () => {
-			if (!frame.contentDocument) {
-				throw new Error("frame.contentDocument is null onload");
-			}
-			frame.contentDocument.head.appendChild(notifierScript);
-			frame.contentDocument.head.appendChild(script);
-		};
-		logInfo("Loading buttplug.io");
-
-		const onload = async () => {
-			logInfo("Loaded Buttplug.io");
-			/** @type {import('./types/buttplug.io.1.0.17')} */
-			// @ts-ignore
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const bp = frame.contentWindow.Buttplug;
-
-			/** @type {import('./types/buttplug.io.1.0.17').ButtplugClient} */
-			const client = new bp.ButtplugClient("BceToySync");
-			client.addListener(
-				"deviceadded",
-				(
-					/** @type {import('./types/buttplug.io.1.0.17').ButtplugClientDevice} */
-					device
-				) => {
-					debug("Device connected", device);
-					fbcChatNotify(
-						displayText(`Vibrator connected: $DeviceName`, {
-							$DeviceName: device.Name,
-						})
-					);
-					const deviceSettings = toySyncState.deviceSettings.get(device.Name);
-					if (deviceSettings) {
-						delete deviceSettings.LastIntensity;
-					}
-				}
-			);
-			client.addListener(
-				"deviceremoved",
-				(
-					/** @type {import('./types/buttplug.io.1.0.17').ButtplugClientDevice} */
-					device
-				) => {
-					debug("Device disconnected", device);
-					fbcChatNotify(
-						displayText(`Vibrator disconnected: $DeviceName`, {
-							$DeviceName: device.Name,
-						})
-					);
-				}
-			);
-			client.addListener("scanningfinished", (data) => {
-				debug("Scanning finished", data);
-			});
-
-			const connector = new bp.ButtplugWebsocketConnectorOptions();
-			connector.Address = "ws://127.0.0.1:12345";
-			try {
-				await client.connect(connector);
-				logInfo("Connected buttplug.io");
-			} catch (ex) {
-				if (ex) {
-					// eslint-disable-next-line no-alert
-					alert(
-						displayText(
-							"buttplug.io is enabled, but server could not be contacted at ws://127.0.0.1:12345. Is Intiface Desktop running? Is another client connected to it?"
-						)
-					);
-					logError("buttplug.io could not connect to server", ex);
-					return;
-				}
-			}
-
-			toySyncState.client = client;
-
-			let lastSync = 0;
-			// Sync vibrations from slots
-			createTimer(() => {
-				if (lastSync > Date.now() - 3000) {
-					// Don't change vibes more than once per 3 seconds
-					return;
-				}
-
-				// 0 is VibrateCmd
-				for (const d of client.Devices.filter((dev) =>
-					dev.AllowedMessages.includes(0)
-				)) {
-					const deviceSettings = toySyncState.deviceSettings?.get(d.Name);
-					if (!deviceSettings) {
-						continue;
-					}
-
-					const slot = deviceSettings.SlotName;
-					const intensity = Player.Appearance.find(
-						(a) => a.Asset.Group.Name === slot
-					)?.Property?.Intensity;
-
-					if (deviceSettings.LastIntensity === intensity) {
-						continue;
-					}
-					deviceSettings.LastIntensity = intensity;
-
-					lastSync = Date.now();
-					if (typeof intensity !== "number" || intensity < 0) {
-						d.vibrate(0);
-					} else {
-						switch (intensity) {
-							case 0:
-								d.vibrate(0.1);
-								debug(d.Name, slot, "intensity 0.1");
-								break;
-							case 1:
-								d.vibrate(0.4);
-								debug(d.Name, slot, "intensity 0.4");
-								break;
-							case 2:
-								d.vibrate(0.75);
-								debug(d.Name, slot, "intensity 0.75");
-								break;
-							case 3:
-								d.vibrate(1.0);
-								debug(d.Name, slot, "intensity 1");
-								break;
-							default:
-								logWarn("Invalid intensity in ", slot, ":", intensity);
-								break;
-						}
-					}
-				}
-			}, 0);
-
-			Commands.push({
-				Tag: "toybatteries",
-				Description: displayText(
-					"Shows the battery status of all connected buttplug.io toys"
-				),
-				Action: () => {
-					(async () => {
-						if (!client.Connected) {
-							fbcChatNotify("buttplug.io is not connected");
-							return;
-						}
-
-						const batteryDevices = client.Devices.filter((dev) =>
-							dev.AllowedMessages.includes(8)
-						);
-						if (batteryDevices.length === 0) {
-							fbcChatNotify("No battery devices connected");
-							return;
-						}
-
-						const batteryStatus = await Promise.all(
-							batteryDevices.map((dev) => dev.batteryLevel())
-						);
-						for (let i = 0; i < batteryDevices.length; i++) {
-							const battery = batteryStatus[i] * 100;
-							fbcChatNotify(`${batteryDevices[i].Name}: ${battery}%`);
-						}
-					})();
-				},
-			});
-
-			Commands.push({
-				Tag: "toyscan",
-				Description: displayText("Scans for connected buttplug.io toys"),
-				Action: () => {
-					if (!client.Connected) {
-						fbcChatNotify(displayText("buttplug.io is not connected"));
-						return;
-					}
-
-					if (client.isScanning) {
-						client.stopScanning();
-						fbcChatNotify(displayText("Scanning stopped"));
-						return;
-					}
-
-					client.startScanning();
-					fbcChatNotify(displayText("Scanning for toys"));
-				},
-			});
-
-			await client.startScanning();
-		};
-
-		window.onmessage = (
-			/** @type {MessageEvent<unknown>} */
-			e
-		) => {
-			if (e.data === "buttplug-loaded") {
-				onload();
-			}
-		};
-
-		notifierScript.textContent = `
-		function sleep(ms) {
-			return new Promise((resolve) => setTimeout(resolve, ms));
-		}
-
-		(async function () {
-			while (typeof Buttplug !== "object" || Buttplug === null) {
-				await sleep(10);
-			}
-
-			await Buttplug.buttplugInit();
-
-			window.top.postMessage("buttplug-loaded", "${window.location.origin}");
-		})();
-		`;
-
-		script.src =
-			"https://cdn.jsdelivr.net/npm/buttplug@1.0.17/dist/web/buttplug.min.js";
-		document.body.appendChild(frame);
 	}
 
 	async function pastProfiles() {
@@ -10929,7 +7569,7 @@ async function ForBetterClub() {
 						color = "pink";
 					}
 					DrawTextFit(
-						progress.toLocaleString() + (increasing ? "↑" : " "),
+						progress.toLocaleString() + (increasing ? "â†‘" : " "),
 						x + 50 * zoom,
 						y - 30 * zoom,
 						100 * zoom,
@@ -10953,46 +7593,6 @@ async function ForBetterClub() {
 		}
 		ChatRoomChatHidden = true;
 	}
-
-	(function () {
-		const sendHeartbeat = () => {
-			/**
-			 * @type {{
-			 * Version: string;
-			 * GameVersion: string;
-			 * InRoom: boolean;
-			 * InPrivate: boolean;
-			 * InTampermonkey: boolean;
-			 * FUSAM: boolean;
-			 * FBCviaFUSAM: boolean;}}
-			 */
-			const payload = {
-				Version: FBC_VERSION,
-				GameVersion,
-				// !! to avoid passing room name to statbot, only presence inside a room or not
-				InRoom: !!Player.LastChatRoom,
-				InPrivate: !!Player.LastChatRoom?.Private,
-				// eslint-disable-next-line camelcase
-				InTampermonkey: typeof GM_info !== "undefined",
-				FUSAM: !!FUSAM.present,
-				FBCviaFUSAM: FUSAM.addons?.FBC?.status === "loaded",
-			};
-			SDK.callOriginal("ServerSend", [
-				"AccountBeep",
-				{
-					BeepType: "Leash",
-					// FBC statbot, which only collects anonymous aggregate version and usage data to justify supporting or dropping support for features
-					MemberNumber: 61197,
-					Message: JSON.stringify(payload),
-					// IsSecret: true to avoid passing room name to statbot
-					IsSecret: true,
-				},
-			]);
-		};
-		setTimeout(sendHeartbeat, 15000);
-		// 5 minutes
-		createTimer(sendHeartbeat, 1000 * 60 * 5);
-	})();
 
 	/**
 	 * @param {string | null} target
@@ -11058,25 +7658,6 @@ async function ForBetterClub() {
 		ctx.textAlign = bk;
 	}
 
-	/** @type {(cb: () => void, intval: number) => void} */
-	function createTimer(cb, intval) {
-		let lastTime = Date.now();
-		SDK.hookFunction(
-			"GameRun",
-			HOOK_PRIORITIES.Top,
-			/**
-			 * @param {Parameters<typeof GameRun>} args
-			 */ (args, next) => {
-				const ts = Date.now();
-				if (ts - lastTime > intval) {
-					lastTime = ts;
-					cb();
-				}
-				return next(args);
-			}
-		);
-	}
-
 	/**
 	 * @param {number} ms
 	 */
@@ -11110,11 +7691,6 @@ async function ForBetterClub() {
 	function isCharacter(c) {
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		return isNonNullObject(c) && typeof c.IsPlayer === "function";
-	}
-
-	/** @type {(c: unknown) => c is (string | string[])} */
-	function isStringOrStringArray(c) {
-		return isString(c) || (Array.isArray(c) && c.every(isString));
 	}
 
 	/** @type {(o: unknown) => o is ItemBundle[][]} */
@@ -11188,14 +7764,6 @@ async function ForBetterClub() {
 	w.addEventListener(
 		"beforeunload",
 		(e) => {
-			if (toySyncState.client?.Connected) {
-				// Stop vibrating toys
-				for (const device of toySyncState.client.Devices.filter((d) =>
-					d.AllowedMessages.includes(0)
-				)) {
-					device.vibrate(0);
-				}
-			}
 			if (fbcSettings.confirmLeave) {
 				e.preventDefault();
 				// @ts-ignore - TS thinks it's private, pffft we don't respect that
