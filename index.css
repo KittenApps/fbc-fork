@@ -1,0 +1,45 @@
+img {
+    max-width: 80%;
+    max-height: 60vh;
+    margin-left: 2em;
+}
+
+body {
+    background: #111;
+    color: #ccc;
+    font-family: sans-serif;
+}
+
+h1,h2,h3,h4,h5,h6 {
+    margin: 1.2em 0;
+}
+
+a {
+    color: cyan;
+}
+a:hover {
+    color: rgb(0, 150, 150) !important;
+}
+a:visited {
+    color: hotpink;
+}
+
+code {
+    color: pink;
+    background: #480000;
+    display: inline-block;
+    border-radius: 0.1em;
+    padding: 0.1em;
+    border: 1px solid maroon;
+}
+
+p {
+    margin-left: 1em;
+}
+
+h1 a, h2 a, h3 a, h4 a, h5 a, h6 a {
+    text-decoration: none;
+}
+h1 a:visited, h2 a:visited, h3 a:visited, h4 a:visited, h5 a:visited, h6 a:visited {
+    color: cyan;
+}

@@ -1,0 +1,5 @@
+#!/usr/bin/fish
+
+git --git-dir=bcx fetch --all || git clone --bare https://github.com/Jomshir98/bondage-club-extended.git bcx
+git --git-dir=bcx fetch origin gh-pages:gh-pages
+echo (git --git-dir=bcx log -n 1 gh-pages | head -n 1 | cut -d " " -f 2)
