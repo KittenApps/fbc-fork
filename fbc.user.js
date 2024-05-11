@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name FBC fork
 // @namespace https://www.bondageprojects.com/
-// @version 6.1.2
+// @version 6.1.3
 // @description fork of old fbc
 // @author Sidious (and others)
 // @match https://bondageprojects.elementfx.com/*
@@ -40,6 +40,14 @@ async function ForBetterClub() {
 
 	const FBC_VERSION = "6.1";
 	const settingsVersion = 61;
+
+	if (GameVersion !== 'R103' && !GameVersion.startsWith('R104Beta')) {
+		fetch('https://api.counterapi.dev/v1/wce/fbc/up');
+		if (window.confirm("This FBC fork is now named WCE. Please remove the old (now with bc r104+ incompatible) user script and follow the instructions to add the new WCE version!")) {
+			window.open("https://github.com/KittenApps/WCE?tab=readme-ov-file#wholesome-club-extensions-wce", "_blank");
+		}
+		return;
+	}
 
 	const fbcChangelog = `${FBC_VERSION} next
 - add button to manual clear and reload the drawing cache of all characters in a chat room
